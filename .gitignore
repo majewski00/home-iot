@@ -1,0 +1,30 @@
+# Dependency directories
+node_modules/
+cdk.out/
+dist
+*.local
+
+# Logs
+logs
+*.log
+
+# Environments
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Crash log files
+crash.log
+crash.*.log
+
+# SSL Certificates
+*.pem
+.ssl-certs/
