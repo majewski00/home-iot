@@ -4,23 +4,19 @@
 
 // Journal represents the overall structure of a user's journal
 export interface Journal {
-  id: string;
-  userId: string;
-  name: string;
   groups: Group[];
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 }
 
 // Group represents a collection of related fields
 export interface Group {
   id: string;
-  journalId: string;
   name: string;
   fields: Field[];
   order: number;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 }
 
 // Field represents a specific item that the user wants to track
@@ -30,12 +26,12 @@ export interface Field {
   name: string;
   fieldTypes: FieldType[];
   order: number;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 }
 
 // Possible field type kinds
-export type FieldTypeKind = "NUMBER" | "CUSTOM_NUMBER" | "DATE" | "LITERAL";
+export type FieldTypeKind = "NUMBER" | "CUSTOM_NUMBER" | "DATE" | "LITERAL"; // TODO: Range=number with slider in range
 
 // FieldType represents the type of data for a field
 export interface FieldType {
@@ -45,30 +41,29 @@ export interface FieldType {
   name: string; // e.g., "When did it occur?"
   dataType?: string; // e.g., "Hours", "Minutes", "Servings"
   order: number;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 }
 
 // JournalEntry represents a single day's journal entry
 export interface JournalEntry {
   id: string;
-  journalId: string;
   date: string; // ISO date string (YYYY-MM-DD)
   values: FieldValue[];
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 }
 
 // FieldValue represents the value for a specific field in a journal entry
 export interface FieldValue {
-  id: string;
   entryId: string;
+  groupId: string;
   fieldId: string;
   fieldTypeId: string;
   value: string | number | null; // Stored as string, parsed based on field type
   filled: boolean; // Whether the field has been filled (YES/NO)
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 }
 
 // JournalStats represents statistics about the journal

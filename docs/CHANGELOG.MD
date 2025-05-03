@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.0.3 - 2025-05-03
+
+### Added
+
+- Backend for Journal endpoints
+- common types in `src/commons/*`
+
 ## 0.0.2 - 2025-05-03
 
 ### Added

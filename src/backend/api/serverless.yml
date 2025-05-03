@@ -1,0 +1,80 @@
+service: ${self:custom.name}
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  stackName: ${self:custom.name}
+  region: ${env:AWS_REGION, 'us-east-1'}
+  stage: ${env:BUILD_STAGE}
+  httpApi:
+    id: ${ssm:/${self:custom.service}/${self:provider.stage}/${self:provider.region}/api_gateway_rest_api_id}
+  tags:
+    Stage: ${self:provider.stage}
+    Region: ${self:provider.region}
+    Service: ${self:custom.service}
+    Version: ${env:APP_VERSION}
+    'Managed By': 'Serverless'
+  stackTags:
+    Stage: ${self:provider.stage}
+    Region: ${self:provider.region}
+    Service: ${self:custom.service}
+    Version: ${env:APP_VERSION}
+    'Managed By': 'Serverless'
+  timeout: 28
+  iam:
+    role:
+      name: ${self:custom.name}
+      statements:
+        - Sid: "SSM"
+          Effect: "Allow"
+          Action:
+            - "ssm:GetParameters"
+          Resource: 
+            - "arn:aws:ssm:${self:provider.region}:${aws:accountId}:parameter/*"
+        - Sid: "DynamoDB"
+          Effect: "Allow"
+          Action:
+            - "dynamodb:PutItem"
+            - "dynamodb:GetItem"
+            - "dynamodb:Query"
+          Resource: 
+            - "${ssm:/${self:custom.service}/${self:provider.stage}/${self:provider.region}/dynamodb_table_arn}"
+
+functions:
+  backend:
+    name: ${self:custom.name}-handler
+    handler: lambda.handler
+    environment:
+      DYNAMODB_TABLE_NAME: ${ssm:/${self:custom.service}/${self:provider.stage}/${self:provider.region}/dynamodb_table_name}
+      COGNITO_USER_POOL_ID: ${ssm:/${self:custom.service}/${self:provider.stage}/${self:provider.region}/user_pool_id}
+      CLOUDFRONT_DISTRIBUTION_ID: ${ssm:/${self:custom.service}/${self:provider.stage}/${self:provider.region}/cloudfront_distribution_id}
+      CLOUDFRONT_DOMAIN_NAME: ${ssm:/${self:custom.service}/${self:provider.stage}/${self:provider.region}/cloudfront_domain_name}
+    events:
+      - httpApi:
+          method: GET
+          path: /api/{proxy+}
+          authorizer:
+            id: ${ssm:/${self:custom.service}/${self:provider.stage}/${self:provider.region}/api_gateway_authorizer_id_cognito}
+            # type: request
+      - httpApi:
+          method: POST
+          path: /api/{proxy+}
+          authorizer:
+            id: ${ssm:/${self:custom.service}/${self:provider.stage}/${self:provider.region}/api_gateway_authorizer_id_cognito}
+
+custom:
+  service: ${env:SERVICE}
+  name: ${self:custom.service}-${self:provider.stage}-backendAPIs
+
+  serverless-offline:
+    noPrependStageInUrl: true
+    noAuth: true
+    ignoreJWTSignature: true
+
+build:
+  esbuild:
+    configFile: ./../esbuild.config.js
+
+plugins:
+  - serverless-offline
