@@ -44,7 +44,7 @@ provider:
 functions:
   backend:
     name: ${self:custom.name}-handler
-    handler: lambda.handler
+    handler: function.handler
     environment:
       DYNAMODB_TABLE_NAME: ${ssm:/${self:custom.service}/${self:provider.stage}/${self:provider.region}/dynamodb_table_name}
       COGNITO_USER_POOL_ID: ${ssm:/${self:custom.service}/${self:provider.stage}/${self:provider.region}/user_pool_id}
@@ -74,7 +74,7 @@ custom:
 
 build:
   esbuild:
-    configFile: ./../esbuild.config.js
+    configFile: ./../esbuild.config.cjs
 
 plugins:
   - serverless-offline

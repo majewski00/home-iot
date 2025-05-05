@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.0.4 - 2025-05-05
+
+### Added
+
+- backend endpoints for journal support
+
+### Fixed 
+
+- Correct configuration of the serverless framework
+
 ## 0.0.3 - 2025-05-03
 
 ### Added

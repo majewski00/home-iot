@@ -1,4 +1,6 @@
 import { Router, Request, Response } from "express";
+import { v4 as uuidv4 } from "uuid";
+
 import {
   putItem,
   queryItems,
@@ -16,6 +18,7 @@ import {
 
 export default (router: Router) => {
   // * Save new/updated journal Structure
+  // TODO: redundant "new" check -- new structure is added below in ROUTES.JOURNAL_FETCH_STRUCTURE
   router.post(
     ROUTES.JOURNAL_SAVE_STRUCTURE,
     async (
@@ -72,6 +75,64 @@ export default (router: Router) => {
           };
           await putItem(process.env.DYNAMODB_TABLE_NAME!, newParams);
           res.status(201).send(stripBaseItem(newParams));
+        } catch (error) {
+          res.status(500).send({
+            message: "Failed to create the structure.",
+            error: error as string,
+          });
+          return;
+        }
+      }
+    }
+  );
+
+  // * Get journal structure
+  router.get(
+    ROUTES.JOURNAL_FETCH_STRUCTURE,
+    async (
+      _req: Request<{}, Journal, {}, {}>,
+      res: Response<Journal | ErrorResponse, Locals>
+    ) => {
+      const newDate = new Date().toISOString();
+      let existingStructure: Journal & BaseItem;
+      try {
+        existingStructure = (
+          await queryItems<Journal & BaseItem>(
+            process.env.DYNAMODB_TABLE_NAME!,
+            `USER#${res.locals.user.sub}#STRUCTURE`,
+            "STRUCTURE#"
+          )
+        )?.[0];
+      } catch (error) {
+        res.status(500).send({
+          message: "Failed to fetch the structure.",
+          error: error as string,
+        });
+        return;
+      }
+      if (existingStructure) {
+        res.status(200).send(stripBaseItem(existingStructure));
+      } else {
+        const defaultStructure: Journal & BaseItem = {
+          PK: `USER#${res.locals.user.sub}#STRUCTURE`,
+          SK: `STRUCTURE#`,
+          userId: res.locals.user.sub,
+          groups: [
+            {
+              id: uuidv4(),
+              name: "My Journal",
+              order: 0,
+              fields: [],
+              createdAt: newDate,
+              updatedAt: newDate,
+            },
+          ],
+          createdAt: newDate,
+          updatedAt: newDate,
+        };
+        try {
+          await putItem(process.env.DYNAMODB_TABLE_NAME!, defaultStructure);
+          res.status(201).send(stripBaseItem(defaultStructure));
         } catch (error) {
           res.status(500).send({
             message: "Failed to create the structure.",
