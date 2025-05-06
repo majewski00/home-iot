@@ -1,121 +1,138 @@
-import React, { useState } from "react";
-import {
-  Box,
-  Typography,
-  IconButton,
-  TextField,
-  InputAdornment,
-} from "@mui/material";
+import React, { useState, useEffect } from "react";
+import { Box, IconButton, TextField, Typography } from "@mui/material";
 import { Add as AddIcon, Remove as RemoveIcon } from "@mui/icons-material";
 
 interface NumberFieldProps {
   value: number | null;
   onChange: (value: number | null) => void;
-  label: string;
+  label?: string;
   dataType?: string;
+  disabled?: boolean;
 }
 
 /**
- * Number field with increment/decrement buttons
+ * NumberField component for entering numeric values with increment/decrement buttons
+ * Format: [-] [Number] [+]
  */
 const NumberField: React.FC<NumberFieldProps> = ({
   value,
   onChange,
   label,
   dataType,
+  disabled = false,
 }) => {
-  const [inputValue, setInputValue] = useState<string>(
-    value !== null ? value.toString() : ""
-  );
+  const [localValue, setLocalValue] = useState<string>(value?.toString() || "");
 
-  // Update local state when prop value changes
-  React.useEffect(() => {
-    setInputValue(value !== null ? value.toString() : "");
+  useEffect(() => {
+    setLocalValue(value?.toString() || "");
   }, [value]);
 
-  // Handle increment
   const handleIncrement = () => {
-    const currentValue = value !== null ? value : 0;
-    onChange(currentValue + 1);
+    const currentValue = Number(localValue) || 0;
+    const newValue = currentValue + 1;
+    setLocalValue(newValue.toString());
+    onChange(newValue);
   };
 
-  // Handle decrement
   const handleDecrement = () => {
-    const currentValue = value !== null ? value : 0;
-    if (currentValue > 0) {
-      onChange(currentValue - 1);
-    }
+    const currentValue = Number(localValue) || 0;
+    const newValue = Math.max(0, currentValue - 1); // Prevent negative values
+    setLocalValue(newValue.toString());
+    onChange(newValue);
   };
 
-  // Handle input change
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
-    setInputValue(newValue);
+    setLocalValue(newValue);
 
-    // Convert to number if valid
+    // Only update parent if it's a valid number
     if (newValue === "") {
       onChange(null);
     } else {
-      const numValue = parseFloat(newValue);
+      const numValue = Number(newValue);
       if (!isNaN(numValue)) {
         onChange(numValue);
       }
     }
   };
 
-  // Handle blur (validate input)
   const handleBlur = () => {
-    if (inputValue === "") {
+    // Clean up the input on blur
+    if (localValue === "") {
       onChange(null);
     } else {
-      const numValue = parseFloat(inputValue);
-      if (isNaN(numValue)) {
-        setInputValue(value !== null ? value.toString() : "");
-      } else {
-        setInputValue(numValue.toString());
+      const numValue = Number(localValue);
+      if (!isNaN(numValue)) {
+        setLocalValue(numValue.toString());
         onChange(numValue);
+      } else {
+        // Reset to previous valid value
+        setLocalValue(value?.toString() || "");
       }
     }
   };
 
   return (
-    <Box sx={{ my: 1 }}>
-      <TextField
-        fullWidth
-        label={label}
-        value={inputValue}
-        onChange={handleInputChange}
-        onBlur={handleBlur}
-        type="number"
-        size="small"
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <IconButton
-                size="small"
-                onClick={handleDecrement}
-                disabled={value === null || value <= 0}
-              >
-                <RemoveIcon fontSize="small" />
-              </IconButton>
-            </InputAdornment>
-          ),
-          endAdornment: (
-            <InputAdornment position="end">
-              <Box display="flex" alignItems="center">
-                {dataType && (
-                  <Typography variant="caption" sx={{ mr: 1 }}>
-                    {dataType}
-                  </Typography>
-                )}
-                <IconButton size="small" onClick={handleIncrement}>
-                  <AddIcon fontSize="small" />
-                </IconButton>
-              </Box>
-            </InputAdornment>
-          ),
-        }}
-      />
+    <Box sx={{ display: "flex", flexDirection: "column", mb: 2 }}>
+      {label && (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+          {label}
+        </Typography>
+      )}
+      <Box sx={{ display: "flex", alignItems: "center" }}>
+        <IconButton
+          onClick={handleDecrement}
+          disabled={disabled || (value !== null && value <= 0)}
+          size="small"
+          sx={{
+            bgcolor: "action.hover",
+            borderRadius: 1,
+            "&:hover": { bgcolor: "action.selected" },
+          }}
+        >
+          <RemoveIcon fontSize="small" />
+        </IconButton>
+
+        <TextField
+          value={localValue}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          disabled={disabled}
+          variant="outlined"
+          size="small"
+          type="number"
+          inputProps={{
+            min: 0,
+            style: { textAlign: "center" },
+          }}
+          sx={{
+            mx: 1,
+            width: "80px",
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 1,
+            },
+          }}
+        />
+
+        <IconButton
+          onClick={handleIncrement}
+          disabled={disabled}
+          size="small"
+          sx={{
+            bgcolor: "action.hover",
+            borderRadius: 1,
+            "&:hover": { bgcolor: "action.selected" },
+          }}
+        >
+          <AddIcon fontSize="small" />
+        </IconButton>
+
+        {dataType && (
+          <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+            {dataType}
+          </Typography>
+        )}
+      </Box>
     </Box>
   );
 };

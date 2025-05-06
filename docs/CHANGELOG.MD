@@ -4,13 +4,46 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.0.6 - 2025-05-06
+
+### Added
+
+- Implemented EditPage functionality:
+  - Added ability to add, remove, and reorder fields within groups using drag and drop.
+  - Implemented inline field creation without modals.
+  - Added group options menu (rename, delete) accessible via three-dot icon.
+  - Implemented inline group renaming.
+  - Added navigation from JournalPage to EditPage.
+
+### Changed
+
+- Refactored JournalPage to use React Router navigation for the Edit button.
+- Added EditPage route to `src/frontend/routes/index.tsx`.
+
+## 0.0.5 - 2025-05-05
+
+### Added
+
+- Frontend implementation for Journal feature:
+  - Created JournalPage component as the main entry point
+  - Implemented DateNavigator for intuitive date selection
+  - Added JournalGroupDisplay for collapsible group visualization with completion statistics
+  - Created JournalFieldInput for field editing with YES/NO toggles
+  - Implemented NumberField component for numeric inputs
+  - Added visual feedback for journal entry completion status
+  - Integrated with existing journal hooks (useJournalEntry, useJournalStructure)
+
+### Fixed
+
+- Corrected import path in routes file for JournalPage component
+
 ## 0.0.4 - 2025-05-05
 
 ### Added
 
 - backend endpoints for journal support
 
-### Fixed 
+### Fixed
 
 - Correct configuration of the serverless framework
 
