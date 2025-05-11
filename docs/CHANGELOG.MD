@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.0.7 - 2025-05-11
+
+### Added
+
+- Implemented FieldTypes Pages both with edit and view functionality
+- `Layout.tsx`
+
 ## 0.0.6 - 2025-05-06
 
 ### Added
