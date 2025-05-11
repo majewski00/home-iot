@@ -31,15 +31,20 @@ export interface Field {
 }
 
 // Possible field type kinds
-export type FieldTypeKind = "NUMBER" | "CUSTOM_NUMBER" | "DATE" | "LITERAL"; // TODO: Range=number with slider in range
+export type FieldTypeKind =
+  | "NUMBER_NAVIGATION"
+  | "NUMBER"
+  | "TIME_SELECT"
+  | "SEVERITY"
+  | "RANGE";
 
 // FieldType represents the type of data for a field
 export interface FieldType {
   id: string;
   fieldId: string;
-  kind: FieldTypeKind;
-  name: string; // e.g., "When did it occur?"
-  dataType?: string; // e.g., "Hours", "Minutes", "Servings"
+  kind: FieldTypeKind | "CHECK"; // CHECK is a special case for checkbox associated with all Field
+  description?: string; // e.g., "When did it occur?"
+  dataOptions?: Record<string, string | number | undefined>; // e.g., "Hours", "Minutes", "Servings", max/min range, etc. - depending on the kind
   order: number;
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -47,7 +52,6 @@ export interface FieldType {
 
 // JournalEntry represents a single day's journal entry
 export interface JournalEntry {
-  id: string;
   date: string; // ISO date string (YYYY-MM-DD)
   values: FieldValue[];
   createdAt: Date | string;
@@ -56,11 +60,10 @@ export interface JournalEntry {
 
 // FieldValue represents the value for a specific field in a journal entry
 export interface FieldValue {
-  entryId: string;
   groupId: string;
   fieldId: string;
   fieldTypeId: string;
-  value: string | number | null; // Stored as string, parsed based on field type
+  value: string | boolean | number | null; // Stored as string, parsed based on field type
   filled: boolean; // Whether the field has been filled (YES/NO)
   createdAt: Date | string;
   updatedAt: Date | string;

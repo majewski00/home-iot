@@ -1,14 +1,8 @@
 import React, { useState } from "react";
-import {
-  Box,
-  Typography,
-  Switch,
-  FormControlLabel,
-  Paper,
-  Collapse,
-} from "@mui/material";
+import { Box, Typography, Paper, Collapse } from "@mui/material";
 import { Field, FieldType, FieldValue } from "@src-types/journal/journal.types";
-import NumberField from "./fields/NumberField";
+import FieldTypeFactory from "./fields/FieldTypeFactory";
+import { CheckFieldView } from "./fields/types/CheckField";
 
 interface JournalFieldInputProps {
   field: Field;
@@ -29,14 +23,21 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
   onUpdateValue,
   disabled = false,
 }) => {
-  // Find if any values are filled
-  const isFilled = values.some((value) => value.filled);
+  // Find the CHECK field type
+  const checkFieldType = field.fieldTypes.find((ft) => ft.kind === "CHECK");
+  const checkValue = checkFieldType
+    ? values.find((v) => v.fieldTypeId === checkFieldType.id)
+    : null;
+
+  // Other field types
+  const otherFieldTypes = field.fieldTypes.filter((ft) => ft.kind !== "CHECK");
+
+  // Check if any values are filled
+  const isFilled = checkValue?.filled || false;
   const [expanded, setExpanded] = useState<boolean>(isFilled);
 
-  const handleToggleChange = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const newFilled = event.target.checked;
+  // Handle toggle change
+  const handleToggleChange = async (newFilled: boolean) => {
     setExpanded(newFilled);
 
     // Update all field types for this field
@@ -54,6 +55,7 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
     }
   };
 
+  // Handle field type value change
   const handleFieldTypeValueChange = async (
     fieldType: FieldType,
     newValue: string | number | null
@@ -67,44 +69,6 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
         value: newValue,
         filled: true, // If a value is set, mark as filled
       });
-    }
-  };
-
-  // Render the appropriate field type input component
-  const renderFieldTypeInput = (fieldType: FieldType, value: FieldValue) => {
-    switch (fieldType.kind) {
-      case "NUMBER":
-        return (
-          <NumberField
-            key={fieldType.id}
-            value={value.value as number | null}
-            onChange={(newValue) =>
-              handleFieldTypeValueChange(fieldType, newValue)
-            }
-            label={fieldType.description}
-            dataType={fieldType.dataType}
-            disabled={disabled}
-          />
-        );
-      // For now, we'll use NumberField for all types
-      // We'll implement the other field types later
-      case "CUSTOM_NUMBER":
-      case "DATE":
-      case "LITERAL":
-      case "CHECK":
-      default:
-        return (
-          <NumberField
-            key={fieldType.id}
-            value={value.value as number | null}
-            onChange={(newValue) =>
-              handleFieldTypeValueChange(fieldType, newValue)
-            }
-            label={fieldType.description}
-            dataType={fieldType.dataType}
-            disabled={disabled}
-          />
-        );
     }
   };
 
@@ -132,26 +96,34 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
         <Typography variant="subtitle1" fontWeight="medium">
           {field.name}
         </Typography>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={isFilled}
-              onChange={handleToggleChange}
-              disabled={disabled}
-              color="primary"
-            />
-          }
-          label={isFilled ? "YES" : "NO"}
-          labelPlacement="start"
-        />
+
+        {/* CHECK field type */}
+        {checkFieldType && checkValue && (
+          <CheckFieldView
+            value={checkValue.filled}
+            onChange={handleToggleChange}
+            disabled={disabled}
+          />
+        )}
       </Box>
 
       <Collapse in={expanded} timeout="auto" unmountOnExit>
         <Box sx={{ mt: 2, pl: 1 }}>
-          {field.fieldTypes.map((fieldType) => {
+          {otherFieldTypes.map((fieldType) => {
             const value = values.find((v) => v.fieldTypeId === fieldType.id);
             if (!value) return null;
-            return renderFieldTypeInput(fieldType, value);
+
+            return (
+              <FieldTypeFactory
+                key={fieldType.id}
+                fieldType={fieldType}
+                value={value.value}
+                onChange={(newValue) =>
+                  handleFieldTypeValueChange(fieldType, newValue)
+                }
+                mode="view"
+              />
+            );
           })}
         </Box>
       </Collapse>

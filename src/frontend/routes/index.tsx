@@ -7,6 +7,7 @@ const LoginPage = lazy(() => import("../pages/SignInPage"));
 const JournalPage = lazy(
   () => import("../features/journal/components/JournalPage")
 );
+const Layout = lazy(() => import("../components/Layout"));
 
 const LoadingFallback = () => (
   <Box
@@ -31,7 +32,9 @@ const AppRoutes = () => {
       return (
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
-            <Route path="/journal" element={<JournalPage />} />
+            <Route element={<Layout />}>
+              <Route path="/journal" element={<JournalPage />} />
+            </Route>
             <Route path="*" element={<Navigate to="/journal" replace />} />
             {/* // TODO: Temporary */}
           </Routes>

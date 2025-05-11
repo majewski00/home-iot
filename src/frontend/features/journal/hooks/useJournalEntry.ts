@@ -37,7 +37,8 @@ export function isValidDateFormat(dateStr: string): boolean {
  */
 export const useJournalEntry = (
   journal: Journal | null,
-  date: string
+  date: string,
+  isEditMode: boolean = false
 ): UseJournalEntryReturn => {
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -104,7 +105,6 @@ export const useJournalEntry = (
       setIsLoading(true);
       setError(null);
 
-      console.log("Fetching journal entry for date:", date);
       const entryData = await fetchJournalEntry(date);
 
       setEntry(entryData);
@@ -115,11 +115,9 @@ export const useJournalEntry = (
           // Entry not found, create a new one
           try {
             const newEntry = await createJournalEntry();
-            console.log("Creating new journal entry:", newEntry);
             setEntry(newEntry);
             setHasChanges(true); // Set to true since this is a new entry that needs to be saved
           } catch (createErr) {
-            console.error("Error creating new journal entry:", createErr);
             setError("Failed to create new journal entry");
           }
         } else {
@@ -139,14 +137,10 @@ export const useJournalEntry = (
   // Only run when date changes or component mounts
   useEffect(() => {
     // Only fetch if journal is available
-    if (journal) {
-      console.log("-- useEffect: Refreshing entry for date:", date);
+    if (journal && !isEditMode) {
       refreshEntry();
     }
-    // We depend directly on validate and createJournalEntry now,
-    // ensuring the effect runs only when date or journal identity changes.
-    // refreshEntry itself is kept stable by its own useCallback.
-  }, [date, journal, validate, createJournalEntry]);
+  }, [date, journal, isEditMode, validate, createJournalEntry]);
 
   const saveEntry = async (): Promise<JournalEntry | null> => {
     if (!validate()) return null;

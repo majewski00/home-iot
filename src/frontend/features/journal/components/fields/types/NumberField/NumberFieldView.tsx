@@ -1,45 +1,43 @@
 import React, { useState, useEffect } from "react";
-import { Box, IconButton, TextField, Typography } from "@mui/material";
-import { Add as AddIcon, Remove as RemoveIcon } from "@mui/icons-material";
+import { Box, TextField, Typography } from "@mui/material";
+import { FieldType } from "@src-types/journal/journal.types";
 
-interface NumberFieldProps {
+export interface NumberFieldViewProps {
   value: number | null;
   onChange: (value: number | null) => void;
-  label?: string;
-  dataType?: string;
+  fieldType: FieldType;
   disabled?: boolean;
 }
 
 /**
- * NumberField component for entering numeric values with increment/decrement buttons
- * Format: [-] [Number] [+]
+ * NumberFieldView component
+ * Renders a simple number input field
  */
-const NumberField: React.FC<NumberFieldProps> = ({
+const NumberFieldView: React.FC<NumberFieldViewProps> = ({
   value,
   onChange,
-  label,
-  dataType,
+  fieldType,
   disabled = false,
 }) => {
   const [localValue, setLocalValue] = useState<string>(value?.toString() || "");
 
+  // Get min/max values from dataOptions if available
+  const minValue =
+    fieldType.dataOptions?.min !== undefined
+      ? Number(fieldType.dataOptions.min)
+      : undefined;
+
+  const maxValue =
+    fieldType.dataOptions?.max !== undefined
+      ? Number(fieldType.dataOptions.max)
+      : undefined;
+
+  // Get unit label from dataOptions if available
+  const unitLabel = fieldType.dataOptions?.unit as string | undefined;
+
   useEffect(() => {
     setLocalValue(value?.toString() || "");
   }, [value]);
-
-  const handleIncrement = () => {
-    const currentValue = Number(localValue) || 0;
-    const newValue = currentValue + 1;
-    setLocalValue(newValue.toString());
-    onChange(newValue);
-  };
-
-  const handleDecrement = () => {
-    const currentValue = Number(localValue) || 0;
-    const newValue = Math.max(0, currentValue - 1); // Prevent negative values
-    setLocalValue(newValue.toString());
-    onChange(newValue);
-  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
@@ -63,8 +61,17 @@ const NumberField: React.FC<NumberFieldProps> = ({
     } else {
       const numValue = Number(localValue);
       if (!isNaN(numValue)) {
-        setLocalValue(numValue.toString());
-        onChange(numValue);
+        // Ensure value is within min/max range if defined
+        let boundedValue = numValue;
+        if (minValue !== undefined) {
+          boundedValue = Math.max(minValue, boundedValue);
+        }
+        if (maxValue !== undefined) {
+          boundedValue = Math.min(maxValue, boundedValue);
+        }
+
+        setLocalValue(boundedValue.toString());
+        onChange(boundedValue);
       } else {
         // Reset to previous valid value
         setLocalValue(value?.toString() || "");
@@ -74,25 +81,12 @@ const NumberField: React.FC<NumberFieldProps> = ({
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", mb: 2 }}>
-      {label && (
+      {fieldType.description && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-          {label}
+          {fieldType.description}
         </Typography>
       )}
       <Box sx={{ display: "flex", alignItems: "center" }}>
-        <IconButton
-          onClick={handleDecrement}
-          disabled={disabled || (value !== null && value <= 0)}
-          size="small"
-          sx={{
-            bgcolor: "action.hover",
-            borderRadius: 1,
-            "&:hover": { bgcolor: "action.selected" },
-          }}
-        >
-          <RemoveIcon fontSize="small" />
-        </IconButton>
-
         <TextField
           value={localValue}
           onChange={handleChange}
@@ -102,34 +96,20 @@ const NumberField: React.FC<NumberFieldProps> = ({
           size="small"
           type="number"
           inputProps={{
-            min: 0,
-            style: { textAlign: "center" },
+            min: minValue,
+            max: maxValue,
           }}
           sx={{
-            mx: 1,
-            width: "80px",
+            width: "120px",
             "& .MuiOutlinedInput-root": {
               borderRadius: 1,
             },
           }}
         />
 
-        <IconButton
-          onClick={handleIncrement}
-          disabled={disabled}
-          size="small"
-          sx={{
-            bgcolor: "action.hover",
-            borderRadius: 1,
-            "&:hover": { bgcolor: "action.selected" },
-          }}
-        >
-          <AddIcon fontSize="small" />
-        </IconButton>
-
-        {dataType && (
+        {unitLabel && (
           <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-            {dataType}
+            {unitLabel}
           </Typography>
         )}
       </Box>
@@ -137,4 +117,4 @@ const NumberField: React.FC<NumberFieldProps> = ({
   );
 };
 
-export default NumberField;
+export default NumberFieldView;

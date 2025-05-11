@@ -3,16 +3,21 @@
  */
 import type { FieldValue, Group } from "./journal.types";
 
-export type ErrorResponse = { message?: string; error: string };
+export type ErrorResponse = { message: string; error?: string };
+
+// used in frontend to handle errors
+export type APIErrorResponse = {
+  status: number;
+  body: ErrorResponse;
+};
 
 export interface Locals {
   user: { sub: string; roles?: string[] };
 }
 
 export interface JournalSaveEntryBody {
-  id?: string;
   date: string;
-  values?: FieldValue[];
+  values: FieldValue[];
 }
 
 export interface JournalSaveStructureBody {

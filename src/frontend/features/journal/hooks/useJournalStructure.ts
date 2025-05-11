@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   fetchJournalStructure,
   saveJournalStructure,
@@ -12,21 +12,22 @@ import {
 } from "@src-types/journal/journal.types";
 import { JournalSaveStructureBody } from "@src-types/journal/api.types";
 import { v4 as uuidv4 } from "uuid";
+import { ApiError } from "@apiHandler";
 
 // TODO: Fetch journal Stats from backend and add to the hook
 
-interface UseJournalStructureReturn {
-  structure: Journal | null;
-  isLoading: boolean;
-  error: string | null;
-  hasChanges: boolean;
+export interface UseJournalStructureMethods {
   addGroup: (name: string) => Promise<Group | null>;
-  addField: (groupId: string, name: string) => Promise<Field | null>;
+  addField: (
+    groupId: string,
+    name: string,
+    targetIndex?: number | null
+  ) => Promise<Field | null>;
   addFieldType: (
     fieldId: string,
     kind: FieldTypeKind,
     name: string,
-    dataType?: string
+    dataOptions?: Record<string, string | number>
   ) => Promise<FieldType | null>;
   updateGroup: (
     groupId: string,
@@ -50,6 +51,15 @@ interface UseJournalStructureReturn {
   reorderFieldType: (fieldTypeId: string, newOrder: number) => Promise<boolean>;
 }
 
+export interface UseJournalStructureReturn {
+  structure: Journal | null;
+  isLoading: boolean;
+  error: string | null;
+  hasChanges: boolean;
+  newUser: boolean;
+  methods: UseJournalStructureMethods;
+}
+
 /**
  * Hook for managing journal structure
  *
@@ -65,8 +75,36 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState<boolean>(false);
+  const [newUser, setNewUser] = useState<boolean>(false);
 
-  // Fetch journal structure
+  const createDefaultStructure = useCallback(async (): Promise<Journal> => {
+    const defaultStructure: Journal = {
+      groups: [
+        {
+          id: uuidv4(),
+          name: "My Journal",
+          order: 0,
+          fields: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      await saveJournalStructure(defaultStructure);
+      setStructure(defaultStructure);
+      setNewUser(true);
+      setHasChanges(false);
+    } catch (error) {
+      setError("Failed to create default structure");
+      console.error("Error creating default structure:", error);
+      setHasChanges(true);
+    }
+    return defaultStructure;
+  }, []);
+
   const refreshStructure = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -75,16 +113,22 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
       setStructure(journalStructure);
       setHasChanges(false);
     } catch (err) {
-      setError("Failed to load journal structure");
-      console.error("Error in useJournalStructure refresh:", err);
+      if (err instanceof ApiError && err.status === 404) {
+        await createDefaultStructure();
+      } else {
+        setError("Failed to load journal structure");
+        console.error("Error in useJournalStructure refresh:", err);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, []); // Removed 'structure' dependency
+  }, [createDefaultStructure]);
 
   useEffect(() => {
     refreshStructure();
-  }, [refreshStructure]);
+    console.log("useJournalStructure: refreshStructure called");
+    // TODO: if newUser --> back to false
+  }, [refreshStructure, createDefaultStructure]);
 
   const addGroup = async (
     name: string,
@@ -127,7 +171,7 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
   const addField = async (
     groupId: string,
     name: string,
-    order?: number
+    targetIndex: number | null = null // Changed 'order' to 'targetIndex', defaulting to null
   ): Promise<Field | null> => {
     if (!structure) {
       setError("No journal exists");
@@ -135,34 +179,69 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
     }
 
     try {
-      const group = structure.groups.find((g) => g.id === groupId);
-      if (!group) {
+      const groupIndex = structure.groups.findIndex((g) => g.id === groupId);
+      if (groupIndex === -1) {
         setError("Group not found");
         return null;
       }
 
-      const nextOrder = order || group.fields.length;
+      const group = structure.groups[groupIndex];
+      const newFieldId = uuidv4(); // Generate a new ID for the field
 
-      const newField: Field = {
+      // Create default CHECK field type
+      const defaultCheckFieldType: FieldType = {
         id: uuidv4(),
-        groupId,
-        name,
-        order: nextOrder,
-        fieldTypes: [],
+        fieldId: newFieldId,
+        kind: "CHECK",
+        order: 10, // Associate with high order to ensure it's last
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
-      const updatedGroups = structure.groups.map((g) => {
-        if (g.id === groupId) {
-          return {
-            ...g,
-            fields: [...g.fields, newField],
-            updatedAt: new Date().toISOString(),
-          };
-        }
-        return g;
-      });
+      const newField: Field = {
+        id: newFieldId,
+        groupId,
+        name,
+        order: 0, // Placeholder, will be set correctly below
+        fieldTypes: [defaultCheckFieldType],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      let updatedFields: Field[];
+      if (
+        targetIndex !== null &&
+        targetIndex >= 0 &&
+        targetIndex <= group.fields.length
+      ) {
+        // Insert at specific index
+        updatedFields = [
+          ...group.fields.slice(0, targetIndex),
+          newField,
+          ...group.fields.slice(targetIndex),
+        ];
+      } else {
+        // Add to the end
+        updatedFields = [...group.fields, newField];
+      }
+
+      // Re-calculate order for all fields in the group
+      const correctlyOrderedFields = updatedFields.map((field, index) => ({
+        ...field,
+        order: index,
+        // Update timestamp for the new field or if its order changed
+        updatedAt:
+          field.id === newField.id || field.order !== index
+            ? new Date().toISOString()
+            : field.updatedAt,
+      }));
+
+      const updatedGroups = [...structure.groups];
+      updatedGroups[groupIndex] = {
+        ...group,
+        fields: correctlyOrderedFields,
+        updatedAt: new Date().toISOString(),
+      };
 
       const updatedStructure = {
         ...structure,
@@ -173,7 +252,11 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
       setStructure(updatedStructure);
       setHasChanges(true);
 
-      return newField;
+      // Return the new field with its correct order
+      const finalNewField = correctlyOrderedFields.find(
+        (f) => f.id === newField.id
+      );
+      return finalNewField || null;
     } catch (err) {
       setError("Failed to create field");
       console.error("Error creating field:", err);
@@ -185,7 +268,7 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
     fieldId: string,
     kind: FieldTypeKind,
     description: string,
-    dataType?: string,
+    dataOptions?: Record<string, string | number>,
     order?: number
   ): Promise<FieldType | null> => {
     if (!structure) {
@@ -217,7 +300,7 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
         fieldId,
         kind,
         description: description,
-        dataType,
+        dataOptions,
         order: nextOrder,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -356,7 +439,7 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
 
   const updateFieldType = async (
     fieldTypeId: string,
-    updates: Partial<Omit<FieldType, "id" | "fieldId">>
+    updates: Partial<Omit<FieldType, "id" | "fieldId" | "kind">>
   ): Promise<boolean> => {
     if (!structure) {
       setError("No journal exists");
@@ -365,6 +448,28 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
 
     try {
       let fieldTypeFound = false;
+      let isCheckFieldType = false;
+
+      // First check if this is a CHECK field type
+      for (const group of structure.groups) {
+        for (const field of group.fields) {
+          const fieldType = field.fieldTypes.find(
+            (ft) => ft.id === fieldTypeId
+          );
+          if (fieldType && fieldType.kind === "CHECK") {
+            isCheckFieldType = true;
+            break;
+          }
+        }
+        if (isCheckFieldType) break;
+      }
+
+      // If trying to change the kind of a CHECK field type, prevent it
+      if (isCheckFieldType) {
+        setError("Cannot change the kind of a CHECK field type");
+        return false;
+      }
+
       const updatedGroups = structure.groups.map((g) => {
         const updatedFields = g.fields.map((f) => {
           const fieldTypeIndex = f.fieldTypes.findIndex(
@@ -523,6 +628,15 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
           );
           if (fieldTypeIndex !== -1) {
             fieldTypeFound = true;
+
+            // Check if this is a CHECK field type and prevent removal
+            if (f.fieldTypes[fieldTypeIndex].kind === "CHECK") {
+              setError(
+                "Cannot remove CHECK field type as it is required for all fields"
+              );
+              return false;
+            }
+
             const updatedFieldTypes = f.fieldTypes.filter(
               (ft) => ft.id !== fieldTypeId
             );
@@ -831,24 +945,47 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
     }
   };
 
+  const methods: UseJournalStructureMethods = useMemo(
+    () => ({
+      addGroup,
+      addField,
+      addFieldType,
+      updateGroup,
+      updateField,
+      updateFieldType,
+      removeGroup,
+      removeField,
+      removeFieldType,
+      saveStructure,
+      refreshStructure,
+      reorderGroup,
+      reorderField,
+      reorderFieldType,
+    }),
+    [
+      addGroup,
+      addField,
+      addFieldType,
+      updateGroup,
+      updateField,
+      updateFieldType,
+      removeGroup,
+      removeField,
+      removeFieldType,
+      saveStructure,
+      refreshStructure,
+      reorderGroup,
+      reorderField,
+      reorderFieldType,
+    ]
+  );
+
   return {
     structure,
     isLoading,
     error,
     hasChanges,
-    addGroup,
-    addField,
-    addFieldType,
-    updateGroup,
-    updateField,
-    updateFieldType,
-    removeGroup,
-    removeField,
-    removeFieldType,
-    saveStructure,
-    refreshStructure,
-    reorderGroup,
-    reorderField,
-    reorderFieldType,
+    newUser,
+    methods,
   };
 };

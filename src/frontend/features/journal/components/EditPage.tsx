@@ -13,6 +13,8 @@ import {
   useTheme,
   Menu,
   MenuItem,
+  Collapse,
+  Select,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -20,9 +22,18 @@ import {
   MoreVert as MoreVertIcon,
   DragIndicator as DragIndicatorIcon,
   Delete as DeleteIcon,
+  Edit as EditIcon,
+  KeyboardArrowUp as ArrowUpIcon,
+  KeyboardArrowDown as ArrowDownIcon,
 } from "@mui/icons-material";
-import { useJournalStructure } from "../hooks/useJournalStructure";
-import { Field, Group } from "@src-types/journal/journal.types";
+import {
+  Field,
+  Group,
+  Journal,
+  FieldTypeKind,
+  FieldType,
+} from "@src-types/journal/journal.types";
+import { UseJournalStructureMethods } from "../hooks/useJournalStructure";
 import {
   DndContext,
   closestCenter,
@@ -40,17 +51,31 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import FieldTypeFactory from "./fields/FieldTypeFactory";
 
 /**
- * EditPage component for editing journal structure
- * Allows users to add, remove, and reorder fields and groups
+ * EditPageContent component for editing journal structure
+ * Allows users to add, remove, and reorder fields and groups.
+ * Receives structure and methods as props.
  */
-const EditPage: React.FC = () => {
+interface EditPageContentProps {
+  structure: Journal;
+  isLoading: boolean;
+  error: string | null;
+  hasChanges: boolean;
+  methods: UseJournalStructureMethods;
+}
+
+const EditPageContent: React.FC<EditPageContentProps> = ({
+  structure,
+  methods,
+  isLoading,
+  error,
+  hasChanges,
+}) => {
   const theme = useTheme();
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [saveError, setSaveError] = useState<boolean>(false);
-  const [newFieldName, setNewFieldName] = useState<string>("");
-  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [showFieldInput, setShowFieldInput] = useState<{
     groupId: string;
     index: number | null;
@@ -58,11 +83,28 @@ const EditPage: React.FC = () => {
   const [groupMenuAnchor, setGroupMenuAnchor] = useState<null | HTMLElement>(
     null
   );
+  const [fieldMenuAnchor, setFieldMenuAnchor] = useState<null | HTMLElement>(
+    null
+  );
   const [activeGroup, setActiveGroup] = useState<Group | null>(null);
+  const [activeField, setActiveField] = useState<Field | null>(null);
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const [renamingFieldId, setRenamingFieldId] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState<string>("");
+  const [newFieldName, setNewFieldName] = useState<string>("");
   const newFieldInputRef = useRef<HTMLInputElement>(null);
   const newGroupNameInputRef = useRef<HTMLInputElement>(null);
+
+  const {
+    addGroup,
+    addField,
+    updateField,
+    updateGroup,
+    removeField,
+    saveStructure,
+    reorderField,
+    reorderGroup,
+  } = methods;
 
   // Set up DnD sensors
   const sensors = useSensors(
@@ -71,21 +113,6 @@ const EditPage: React.FC = () => {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
-
-  // Get journal structure
-  const {
-    structure,
-    isLoading,
-    error,
-    hasChanges,
-    addGroup,
-    addField,
-    updateField,
-    updateGroup,
-    removeField,
-    saveStructure,
-    reorderField,
-  } = useJournalStructure();
 
   // Focus on the new field input when it appears
   useEffect(() => {
@@ -146,15 +173,7 @@ const EditPage: React.FC = () => {
     const name = newFieldName.trim() || "New Field";
 
     try {
-      const newField = await addField(groupId, name);
-
-      if (newField && index !== null) {
-        // If we're inserting at a specific index, reorder the field
-        const group = structure?.groups.find((g) => g.id === groupId);
-        if (group) {
-          await reorderField(newField.id, index);
-        }
-      }
+      await addField(groupId, name, index);
 
       setShowFieldInput(null);
       setNewFieldName("");
@@ -173,12 +192,68 @@ const EditPage: React.FC = () => {
   };
 
   // Handle field deletion
-  const handleDeleteField = async (fieldId: string) => {
-    try {
-      await removeField(fieldId);
-    } catch (error) {
-      console.error("Error removing field:", error);
+  const handleDeleteField = async () => {
+    if (activeField) {
+      try {
+        await removeField(activeField.id);
+        handleFieldMenuClose();
+      } catch (error) {
+        console.error("Error removing field:", error);
+      }
     }
+  };
+
+  // Handle field rename
+  const handleRenameField = () => {
+    if (activeField) {
+      setRenamingFieldId(activeField.id);
+      setNewFieldName(activeField.name);
+      handleFieldMenuClose();
+    }
+  };
+
+  // Handle field name submit when renaming
+  const handleFieldRenameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!renamingFieldId) return;
+
+    const name = newFieldName.trim();
+    if (!name) {
+      setRenamingFieldId(null);
+      return;
+    }
+
+    try {
+      await updateField(renamingFieldId, { name });
+      setRenamingFieldId(null);
+    } catch (error) {
+      console.error("Error renaming field:", error);
+    }
+  };
+
+  // Handle field name input blur when renaming
+  const handleFieldRenameInputBlur = () => {
+    if (newFieldName.trim()) {
+      handleFieldRenameSubmit({ preventDefault: () => {} } as React.FormEvent);
+    } else {
+      setRenamingFieldId(null);
+    }
+  };
+
+  // Handle field menu open
+  const handleFieldMenuOpen = (
+    event: React.MouseEvent<HTMLElement>,
+    field: Field
+  ) => {
+    setFieldMenuAnchor(event.currentTarget);
+    setActiveField(field);
+  };
+
+  // Handle field menu close
+  const handleFieldMenuClose = () => {
+    setFieldMenuAnchor(null);
+    setActiveField(null);
   };
 
   // Handle field drag and drop
@@ -242,6 +317,39 @@ const EditPage: React.FC = () => {
         handleGroupMenuClose();
       } catch (error) {
         console.error("Error removing group:", error);
+      }
+    }
+  };
+
+  // Handle group move up
+  const handleMoveGroupUp = async () => {
+    if (activeGroup) {
+      try {
+        const currentIndex =
+          structure?.groups.findIndex((g) => g.id === activeGroup.id) || 0;
+        if (currentIndex > 0) {
+          await reorderGroup(activeGroup.id, currentIndex - 1);
+        }
+        handleGroupMenuClose();
+      } catch (error) {
+        console.error("Error moving group up:", error);
+      }
+    }
+  };
+
+  // Handle group move down
+  const handleMoveGroupDown = async () => {
+    if (activeGroup && structure) {
+      try {
+        const currentIndex = structure.groups.findIndex(
+          (g) => g.id === activeGroup.id
+        );
+        if (currentIndex < structure.groups.length - 1) {
+          await reorderGroup(activeGroup.id, currentIndex + 1);
+        }
+        handleGroupMenuClose();
+      } catch (error) {
+        console.error("Error moving group down:", error);
       }
     }
   };
@@ -449,7 +557,7 @@ const EditPage: React.FC = () => {
                             onChange={handleGroupNameChange}
                             onBlur={handleGroupNameInputBlur}
                             inputRef={newGroupNameInputRef}
-                            autoFocus
+                            // autoFocus removed
                             sx={{
                               "& .MuiOutlinedInput-root": {
                                 fontSize: theme.typography.h6.fontSize,
@@ -495,6 +603,63 @@ const EditPage: React.FC = () => {
                             .sort((a, b) => a.order - b.order)
                             .map((field, index) => (
                               <React.Fragment key={field.id}>
+                                {/* Field insertion hover area (now at top) */}
+                                <Box
+                                  className="field-insert"
+                                  sx={{
+                                    height: "30px", // Increased height for better usability
+                                    mb: 1,
+                                    opacity: 0,
+                                    transition: "opacity 0.2s",
+                                    display: "flex",
+                                    justifyContent: "center",
+                                    alignItems: "center",
+                                    "&:hover": {
+                                      opacity: 1, // Show the entire area on hover
+                                      "& .insert-line": {
+                                        height: "4px",
+                                      },
+                                      "& .insert-button": {
+                                        opacity: 1,
+                                      },
+                                    },
+                                  }}
+                                >
+                                  <Box
+                                    className="insert-line"
+                                    sx={{
+                                      width: "100%",
+                                      height: "2px",
+                                      bgcolor: "primary.main",
+                                      transition: "height 0.2s",
+                                      position: "relative",
+                                    }}
+                                  >
+                                    <IconButton
+                                      className="insert-button"
+                                      size="small"
+                                      color="primary"
+                                      onClick={
+                                        () => handleAddField(group.id, index) // MODIFIED: index + 1 to index
+                                      }
+                                      sx={{
+                                        position: "absolute",
+                                        top: "50%",
+                                        left: "50%",
+                                        transform: "translate(-50%, -50%)",
+                                        bgcolor: "background.paper",
+                                        opacity: 0,
+                                        transition: "opacity 0.2s",
+                                        "&:hover": {
+                                          bgcolor: "background.paper",
+                                        },
+                                      }}
+                                    >
+                                      <AddIcon fontSize="small" />
+                                    </IconButton>
+                                  </Box>
+                                </Box>
+
                                 {/* Field insertion point */}
                                 {showFieldInput?.groupId === group.id &&
                                   showFieldInput?.index === index && (
@@ -528,64 +693,17 @@ const EditPage: React.FC = () => {
                                 <SortableFieldItem
                                   field={field}
                                   groupId={group.id}
-                                  onDelete={handleDeleteField}
+                                  renamingFieldId={renamingFieldId}
+                                  newFieldName={newFieldName}
+                                  setNewFieldName={setNewFieldName}
+                                  handleFieldRenameSubmit={
+                                    handleFieldRenameSubmit
+                                  }
+                                  handleFieldRenameInputBlur={
+                                    handleFieldRenameInputBlur
+                                  }
+                                  handleFieldMenuOpen={handleFieldMenuOpen}
                                 />
-
-                                {/* Field insertion hover area */}
-                                <Box
-                                  className="field-insert"
-                                  sx={{
-                                    height: "20px",
-                                    mb: 1,
-                                    opacity: 0,
-                                    transition: "opacity 0.2s",
-                                    display: "flex",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                    "&:hover": {
-                                      "& .insert-line": {
-                                        height: "4px",
-                                      },
-                                      "& .insert-button": {
-                                        opacity: 1,
-                                      },
-                                    },
-                                  }}
-                                >
-                                  <Box
-                                    className="insert-line"
-                                    sx={{
-                                      width: "100%",
-                                      height: "2px",
-                                      bgcolor: "primary.main",
-                                      transition: "height 0.2s",
-                                      position: "relative",
-                                    }}
-                                  >
-                                    <IconButton
-                                      className="insert-button"
-                                      size="small"
-                                      color="primary"
-                                      onClick={() =>
-                                        handleAddField(group.id, index + 1)
-                                      }
-                                      sx={{
-                                        position: "absolute",
-                                        top: "50%",
-                                        left: "50%",
-                                        transform: "translate(-50%, -50%)",
-                                        bgcolor: "background.paper",
-                                        opacity: 0,
-                                        transition: "opacity 0.2s",
-                                        "&:hover": {
-                                          bgcolor: "background.paper",
-                                        },
-                                      }}
-                                    >
-                                      <AddIcon fontSize="small" />
-                                    </IconButton>
-                                  </Box>
-                                </Box>
                               </React.Fragment>
                             ))
                         )}
@@ -658,8 +776,28 @@ const EditPage: React.FC = () => {
         onClose={handleGroupMenuClose}
       >
         <MenuItem onClick={handleRenameGroup}>Rename Group</MenuItem>
+        <MenuItem onClick={handleMoveGroupUp}>
+          <ArrowUpIcon fontSize="small" sx={{ mr: 1 }} />
+          Move Up
+        </MenuItem>
+        <MenuItem onClick={handleMoveGroupDown}>
+          <ArrowDownIcon fontSize="small" sx={{ mr: 1 }} />
+          Move Down
+        </MenuItem>
         <MenuItem onClick={handleDeleteGroup} sx={{ color: "error.main" }}>
           Delete Group
+        </MenuItem>
+      </Menu>
+
+      {/* Field menu */}
+      <Menu
+        anchorEl={fieldMenuAnchor}
+        open={Boolean(fieldMenuAnchor)}
+        onClose={handleFieldMenuClose}
+      >
+        <MenuItem onClick={handleRenameField}>Rename Field</MenuItem>
+        <MenuItem onClick={handleDeleteField} sx={{ color: "error.main" }}>
+          Delete Field
         </MenuItem>
       </Menu>
     </Container>
@@ -670,13 +808,26 @@ const EditPage: React.FC = () => {
 interface SortableFieldItemProps {
   field: Field;
   groupId: string;
-  onDelete: (fieldId: string) => void;
+  renamingFieldId: string | null;
+  newFieldName: string;
+  setNewFieldName: (name: string) => void;
+  handleFieldRenameSubmit: (e: React.FormEvent) => Promise<void>;
+  handleFieldRenameInputBlur: () => void;
+  handleFieldMenuOpen: (
+    event: React.MouseEvent<HTMLElement>,
+    field: Field
+  ) => void;
 }
 
 const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
   field,
   groupId,
-  onDelete,
+  renamingFieldId,
+  newFieldName,
+  setNewFieldName,
+  handleFieldRenameSubmit,
+  handleFieldRenameInputBlur,
+  handleFieldMenuOpen,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({
@@ -692,6 +843,53 @@ const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
     transition,
   };
 
+  const renamingFieldRef = useRef<HTMLInputElement>(null);
+  const [showFieldTypes, setShowFieldTypes] = useState(false);
+  const [addingFieldType, setAddingFieldType] = useState(false);
+  const [selectedFieldTypeKind, setSelectedFieldTypeKind] =
+    useState<FieldTypeKind | null>(null);
+
+  // Handle adding a new field type
+  const handleAddFieldType = async () => {
+    if (!selectedFieldTypeKind) return;
+
+    try {
+      // TODO: This would need to be implemented in useJournalStructure
+      console.log(
+        "Add field type:",
+        selectedFieldTypeKind,
+        "to field:",
+        field.id
+      );
+      // Reset state
+      setAddingFieldType(false);
+      setSelectedFieldTypeKind(null);
+    } catch (error) {
+      console.error("Error adding field type:", error);
+    }
+  };
+
+  // Handle field type update
+  const handleFieldTypeUpdate = (
+    fieldTypeId: string,
+    updates: Partial<FieldType>
+  ) => {
+    // TODO: This would need to be implemented in useJournalStructure
+    console.log("Update field type:", fieldTypeId, "with:", updates);
+  };
+
+  // Handle field type deletion
+  const handleDeleteFieldType = (fieldTypeId: string) => {
+    // TODO: This would need to be implemented in useJournalStructure
+    console.log("Delete field type:", fieldTypeId);
+  };
+
+  useEffect(() => {
+    if (renamingFieldId === field.id && renamingFieldRef.current) {
+      renamingFieldRef.current.focus();
+    }
+  }, [renamingFieldId, field.id, renamingFieldRef]);
+
   return (
     <Box
       ref={setNodeRef}
@@ -704,7 +902,7 @@ const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
         border: "1px solid",
         borderColor: "divider",
         display: "flex",
-        alignItems: "center",
+        flexDirection: "column",
         position: "relative",
         "&:hover": {
           "& .field-actions": {
@@ -717,38 +915,196 @@ const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
       }}
       {...attributes}
     >
-      <Box
-        {...listeners}
-        sx={{
-          mr: 2,
-          color: "text.secondary",
-          cursor: "grab",
-        }}
-      >
-        <DragIndicatorIcon />
-      </Box>
-
-      <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
-        {field.name}
-      </Typography>
-
-      <Box
-        className="field-actions"
-        sx={{
-          opacity: 0,
-          transition: "opacity 0.2s",
-        }}
-      >
-        <IconButton
-          size="small"
-          onClick={() => onDelete(field.id)}
-          sx={{ color: "error.main" }}
+      {/* Field header */}
+      <Box sx={{ display: "flex", alignItems: "center", width: "100%" }}>
+        <Box
+          {...listeners}
+          sx={{
+            mr: 2,
+            color: "text.secondary",
+            cursor: "grab",
+          }}
         >
-          <DeleteIcon />
-        </IconButton>
+          <DragIndicatorIcon />
+        </Box>
+
+        {renamingFieldId === field.id ? (
+          <Box
+            component="form"
+            onSubmit={handleFieldRenameSubmit}
+            sx={{ flexGrow: 1 }}
+          >
+            <TextField
+              fullWidth
+              variant="outlined"
+              size="small"
+              value={newFieldName}
+              onChange={(e) => setNewFieldName(e.target.value)}
+              onBlur={handleFieldRenameInputBlur}
+              inputRef={renamingFieldRef}
+            />
+          </Box>
+        ) : (
+          <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
+            {field.name}
+          </Typography>
+        )}
+
+        <Box
+          className="field-actions"
+          sx={{
+            opacity: 0,
+            transition: "opacity 0.2s",
+            display: "flex",
+          }}
+        >
+          <Button
+            size="small"
+            onClick={() => setShowFieldTypes(!showFieldTypes)}
+            sx={{ mr: 1 }}
+          >
+            {showFieldTypes ? "Hide Field Types" : "Show Field Types"}
+          </Button>
+          <IconButton
+            size="small"
+            onClick={(e) => handleFieldMenuOpen(e, field)}
+            aria-label="field options"
+          >
+            <MoreVertIcon />
+          </IconButton>
+        </Box>
       </Box>
+
+      {/* Field Types section */}
+      <Collapse in={showFieldTypes}>
+        <Box sx={{ mt: 2, pl: 4 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Field Types
+          </Typography>
+
+          {/* List existing field types */}
+          {field.fieldTypes
+            .filter((ft) => ft.kind !== "CHECK") // Don't show CHECK field type
+            .map((fieldType) => (
+              <Box
+                key={fieldType.id}
+                sx={{
+                  mb: 2,
+                  p: 1,
+                  border: "1px dashed",
+                  borderColor: "divider",
+                  borderRadius: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    mb: 1,
+                  }}
+                >
+                  <Typography variant="body2" fontWeight="medium">
+                    {fieldType.description || fieldType.kind}
+                  </Typography>
+                  <IconButton
+                    size="small"
+                    onClick={() => handleDeleteFieldType(fieldType.id)}
+                    sx={{ p: 0.5 }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+
+                <FieldTypeFactory
+                  fieldType={fieldType}
+                  value={null} // No value needed in edit mode
+                  onChange={() => {}} // No onChange needed in edit mode
+                  mode="edit"
+                  onFieldTypeUpdate={(updates) =>
+                    handleFieldTypeUpdate(fieldType.id, updates)
+                  }
+                />
+              </Box>
+            ))}
+
+          {/* Add new field type */}
+          {!addingFieldType ? (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() => setAddingFieldType(true)}
+              sx={{ mt: 1 }}
+            >
+              Add Field Type
+            </Button>
+          ) : (
+            <Box
+              sx={{
+                mt: 2,
+                p: 2,
+                border: "1px dashed",
+                borderColor: "primary.main",
+                borderRadius: 1,
+              }}
+            >
+              <Typography variant="body2" gutterBottom>
+                Select Field Type:
+              </Typography>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <Select
+                  fullWidth
+                  size="small"
+                  value={selectedFieldTypeKind || ""}
+                  onChange={(e) =>
+                    setSelectedFieldTypeKind(e.target.value as FieldTypeKind)
+                  }
+                >
+                  <MenuItem value="NUMBER_NAVIGATION">
+                    Number with Navigation
+                  </MenuItem>
+                  <MenuItem value="NUMBER">Number</MenuItem>
+                  <MenuItem value="TIME_SELECT">Time Select</MenuItem>
+                  <MenuItem value="SEVERITY">Severity</MenuItem>
+                  <MenuItem value="RANGE">Range</MenuItem>
+                </Select>
+
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: 1,
+                    mt: 1,
+                  }}
+                >
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => {
+                      setAddingFieldType(false);
+                      setSelectedFieldTypeKind(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handleAddFieldType}
+                    disabled={!selectedFieldTypeKind}
+                  >
+                    Add
+                  </Button>
+                </Box>
+              </Box>
+            </Box>
+          )}
+        </Box>
+      </Collapse>
     </Box>
   );
 };
 
-export default EditPage;
+export default EditPageContent;

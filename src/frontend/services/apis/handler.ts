@@ -1,12 +1,19 @@
 import { fetchAuthSession } from "aws-amplify/auth";
 import { StatusCodes, getReasonPhrase } from "http-status-codes";
 import { HTTP_API_URL, IS_OFFLINE } from "@config";
+import { ErrorResponse } from "@src-types/journal/api.types";
 
 const TOKEN_EXPIRY_MINUTES = 5;
 const API_BASE_URL = IS_OFFLINE ? "" : HTTP_API_URL;
 
 let accessToken: string | null = null;
 let tokenFetchTime: Date | null = null;
+
+export class ApiError extends Error {
+  constructor(public body: ErrorResponse, public status: number) {
+    super(body.message);
+  }
+}
 
 /**
  * Gets a valid access token, fetching a new one if expired or not available
@@ -27,7 +34,10 @@ async function getAccessToken(): Promise<string> {
       tokenFetchTime = now;
     } catch (error) {
       console.error("Error fetching auth session:", error);
-      throw new Error("Authentication required");
+      const body: ErrorResponse = {
+        message: getReasonPhrase(StatusCodes.UNAUTHORIZED),
+      };
+      throw new ApiError(body, StatusCodes.UNAUTHORIZED);
     }
   }
 
@@ -89,18 +99,13 @@ async function handleResponse(
   if (response.status === StatusCodes.UNAUTHORIZED) {
     accessToken = null;
     tokenFetchTime = null;
-    const error = new Error("Authentication required");
-    (error as any).status = response.status;
-    throw error;
+    const body = (await response.json()) as ErrorResponse;
+    throw new ApiError(body, response.status);
   }
 
   if (!response.ok) {
-    const reasonPhrase = getReasonPhrase(response.status);
-    const error = new Error(`API request failed: ${reasonPhrase}`);
-    (error as any).status = response.status;
-    (error as any).message = reasonPhrase;
-
-    throw error;
+    const body = (await response.json()) as ErrorResponse;
+    throw new ApiError(body, response.status);
   }
 
   if (isText) {
@@ -117,11 +122,11 @@ async function handleResponse(
     text.trim().startsWith("<!DOCTYPE html>") ||
     text.trim().startsWith("<html")
   ) {
-    console.error(
-      "Received HTML response instead of expected data format:",
-      text.substring(0, 100) + "..."
-    );
-    return null;
+    const body: ErrorResponse = {
+      message: getReasonPhrase(StatusCodes.INTERNAL_SERVER_ERROR),
+      error: "Server might be unavailable",
+    };
+    throw new ApiError(body, StatusCodes.INTERNAL_SERVER_ERROR);
   }
   return text;
 }

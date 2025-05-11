@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   Box,
   Typography,
@@ -8,7 +8,6 @@ import {
   Button,
   CircularProgress,
   Chip,
-  Divider,
   Alert,
   Fade,
   useTheme,
@@ -22,6 +21,7 @@ import { useJournalStructure } from "../hooks/useJournalStructure";
 import { useJournalEntry } from "../hooks/useJournalEntry";
 import DateNavigator from "./DateNavigator";
 import JournalGroupDisplay from "./JournalGroupDisplay";
+import EditPageContent from "./EditPage";
 
 /**
  * Main Journal Page component
@@ -30,43 +30,67 @@ import JournalGroupDisplay from "./JournalGroupDisplay";
 const JournalPage: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split("T")[0]
   );
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [saveError, setSaveError] = useState<boolean>(false);
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
 
-  // Get journal structure
   const {
     structure,
     isLoading: isLoadingStructure,
     error: structureError,
-  } = useJournalStructure(); // return
+    hasChanges: structureHasChanges,
+    newUser,
+    methods,
+  } = useJournalStructure();
 
-  // Get journal entry for selected date
   const {
     entry,
     isLoading: isLoadingEntry,
     error: entryError,
-    hasChanges,
+    hasChanges: entryHasChanges,
     saveEntry,
     updateValue,
     refreshEntry,
-  } = useJournalEntry(structure, selectedDate);
+  } = useJournalEntry(structure, selectedDate, isEditMode);
 
-  // Reset notifications when date changes
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    if (isEditMode) {
+      searchParams.set("mode", "edit");
+    } else if (newUser) {
+      searchParams.set("mode", "edit");
+    } else {
+      searchParams.delete("mode");
+    }
+    navigate(`?${searchParams.toString()}`, { replace: true });
+  }, [isEditMode, navigate, location.search, newUser]);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    if (searchParams.get("mode") === "edit") {
+      setIsEditMode(true);
+    } else if (newUser) {
+      setIsEditMode(true);
+    } else {
+      setIsEditMode(false);
+    }
+  }, [location.search]);
+
   useEffect(() => {
     setSaveSuccess(false);
     setSaveError(false);
-  }, [selectedDate]);
+  }, [selectedDate, isEditMode]);
 
-  // Handle date change
   const handleDateChange = (date: string) => {
     setSelectedDate(date);
   };
 
-  // Handle save
-  const handleSave = async () => {
+  const handleSaveEntry = async () => {
     try {
       setSaveSuccess(false);
       setSaveError(false);
@@ -75,7 +99,6 @@ const JournalPage: React.FC = () => {
 
       if (result) {
         setSaveSuccess(true);
-        // Hide success message after 3 seconds
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
         setSaveError(true);
@@ -86,9 +109,7 @@ const JournalPage: React.FC = () => {
     }
   };
 
-  // Loading state
-  const isLoading = isLoadingStructure || isLoadingEntry;
-  if (isLoading) {
+  if (isLoadingStructure) {
     return (
       <Box
         display="flex"
@@ -98,15 +119,13 @@ const JournalPage: React.FC = () => {
       >
         <CircularProgress />
         <Typography variant="h6" ml={2}>
-          Loading journal...
+          Loading journal structure...
         </Typography>
       </Box>
     );
   }
 
-  // Error state
-  const error = structureError || entryError;
-  if (error) {
+  if (structureError) {
     return (
       <Box
         display="flex"
@@ -115,13 +134,12 @@ const JournalPage: React.FC = () => {
         minHeight="80vh"
       >
         <Typography variant="h6" color="error">
-          Error: {error}
+          Error loading journal structure: {structureError}
         </Typography>
       </Box>
     );
   }
 
-  // No journal structure
   if (!structure) {
     return (
       <Container maxWidth="md">
@@ -136,9 +154,7 @@ const JournalPage: React.FC = () => {
             variant="contained"
             color="primary"
             size="large"
-            // This would navigate to a journal creation page
-            // or open a creation modal
-            onClick={() => console.log("Create journal")}
+            onClick={() => setIsEditMode(true)}
           >
             Create Journal
           </Button>
@@ -147,18 +163,56 @@ const JournalPage: React.FC = () => {
     );
   }
 
-  // Calculate overall completion percentage
+  if (isEditMode) {
+    return (
+      <EditPageContent
+        structure={structure}
+        methods={methods}
+        isLoading={isLoadingStructure}
+        error={structureError}
+        hasChanges={structureHasChanges}
+      />
+    );
+  }
+
+  if (isLoadingEntry) {
+    return (
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="80vh"
+      >
+        <CircularProgress />
+        <Typography variant="h6" ml={2}>
+          Loading journal entry...
+        </Typography>
+      </Box>
+    );
+  }
+
+  if (entryError) {
+    return (
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="80vh"
+      >
+        <Typography variant="h6" color="error">
+          Error loading journal entry: {entryError}
+        </Typography>
+      </Box>
+    );
+  }
+
   const calculateOverallCompletion = () => {
     if (!entry) return 0;
-
     const totalFields = entry.values.length;
     if (totalFields === 0) return 0;
-
     const filledFields = entry.values.filter((value) => value.filled).length;
     return Math.round((filledFields / totalFields) * 100);
   };
-
-  const completionPercentage = calculateOverallCompletion();
 
   return (
     <Container maxWidth="md">
@@ -191,7 +245,7 @@ const JournalPage: React.FC = () => {
               variant="outlined"
               startIcon={<EditIcon />}
               size="small"
-              onClick={() => navigate("/journal/edit")}
+              onClick={() => setIsEditMode(true)}
               sx={{ borderRadius: 2 }}
             >
               Edit
@@ -199,7 +253,6 @@ const JournalPage: React.FC = () => {
           </Box>
         </Box>
 
-        {/* Date Navigator */}
         <DateNavigator
           selectedDate={selectedDate}
           onDateChange={handleDateChange}
@@ -236,27 +289,13 @@ const JournalPage: React.FC = () => {
               bgcolor: theme.palette.background.default,
               border: "1px solid",
               borderColor: "divider",
-              borderWidth: "1px", // Reduced border prominence
-              boxShadow: "none", // Remove any shadow
+              borderWidth: "1px",
+              boxShadow: "none",
             }}
           >
-            {/* Journal header with completion */}
-            <Box
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
-              mb={2}
-            >
-              {/* Removed "Fill Your Journal" text as per TODO */}
-              {/* Removed overall completion percentage as per TODO */}
-            </Box>
-
-            {/* Removed divider as per TODO */}
-
-            {/* Groups */}
             {structure.groups.length === 0 ? (
               <Typography variant="body1" align="center" sx={{ py: 4 }}>
-                No groups in your journal. Add some to get started.
+                No groups in your journal. Add some in Edit Mode.
               </Typography>
             ) : (
               structure.groups
@@ -271,15 +310,14 @@ const JournalPage: React.FC = () => {
                 ))
             )}
 
-            {/* Save button */}
             <Box display="flex" justifyContent="center" mt={4}>
               <Button
                 variant="contained"
                 color="primary"
                 size="large"
                 startIcon={<SaveIcon />}
-                onClick={handleSave}
-                disabled={!hasChanges}
+                onClick={handleSaveEntry}
+                disabled={!entryHasChanges}
                 sx={{
                   px: 4,
                   py: 1.5,
