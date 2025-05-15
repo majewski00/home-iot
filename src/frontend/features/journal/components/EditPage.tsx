@@ -15,6 +15,11 @@ import {
   MenuItem,
   Collapse,
   Select,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -25,6 +30,7 @@ import {
   Edit as EditIcon,
   KeyboardArrowUp as ArrowUpIcon,
   KeyboardArrowDown as ArrowDownIcon,
+  ArrowBack as ArrowBackIcon,
 } from "@mui/icons-material";
 import {
   Field,
@@ -64,6 +70,7 @@ interface EditPageContentProps {
   error: string | null;
   hasChanges: boolean;
   methods: UseJournalStructureMethods;
+  onExitEditMode: () => void;
 }
 
 const EditPageContent: React.FC<EditPageContentProps> = ({
@@ -72,10 +79,13 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
   isLoading,
   error,
   hasChanges,
+  onExitEditMode,
 }) => {
   const theme = useTheme();
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [saveError, setSaveError] = useState<boolean>(false);
+  const [openExitConfirmDialog, setOpenExitConfirmDialog] =
+    useState<boolean>(false);
   const [showFieldInput, setShowFieldInput] = useState<{
     groupId: string;
     index: number | null;
@@ -87,20 +97,31 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
     null
   );
   const [activeGroup, setActiveGroup] = useState<Group | null>(null);
-  const [activeField, setActiveField] = useState<Field | null>(null);
+  const [activeField, setActiveField] = useState<{
+    field: Field;
+    groupId: string;
+  } | null>(null);
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
   const [renamingFieldId, setRenamingFieldId] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState<string>("");
   const [newFieldName, setNewFieldName] = useState<string>("");
   const newFieldInputRef = useRef<HTMLInputElement>(null);
   const newGroupNameInputRef = useRef<HTMLInputElement>(null);
+  const addFieldButtonRefs = useRef<Record<string, HTMLButtonElement | null>>(
+    {}
+  );
 
   const {
+    refreshStructure,
     addGroup,
     addField,
+    addFieldType,
     updateField,
     updateGroup,
+    updateFieldType,
+    removeGroup,
     removeField,
+    removeFieldType,
     saveStructure,
     reorderField,
     reorderGroup,
@@ -129,7 +150,7 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
   }, [renamingGroupId]);
 
   // Handle save
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     try {
       setSaveSuccess(false);
       setSaveError(false);
@@ -140,13 +161,54 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
         setSaveSuccess(true);
         // Hide success message after 3 seconds
         setTimeout(() => setSaveSuccess(false), 3000);
+        return true;
       } else {
         setSaveError(true);
+        return false;
       }
     } catch (error) {
       console.error("Error saving journal structure:", error);
       setSaveError(true);
+      return false;
     }
+  };
+
+  // Confirmation Dialog Handlers
+  const handleExitClick = () => {
+    if (hasChanges) {
+      setOpenExitConfirmDialog(true);
+    } else {
+      onExitEditMode();
+    }
+  };
+
+  const handleCloseExitConfirmDialog = () => {
+    setOpenExitConfirmDialog(false);
+  };
+
+  const handleSaveAndExit = async () => {
+    const saved = await handleSave();
+    if (saved) {
+      // Optionally, wait for saveSuccess animation or just exit
+      onExitEditMode();
+    }
+    // Even if save fails, user chose to exit, so close dialog.
+    // User will see the saveError message.
+    setOpenExitConfirmDialog(false);
+    // If save failed, and we want to keep them on the page, remove onExitEditMode()
+    if (!saved) {
+      // Potentially keep the dialog open or provide more feedback
+      // For now, we close the dialog and they stay on the page with error visible
+    } else {
+      onExitEditMode();
+    }
+  };
+
+  const handleExitWithoutSaving = () => {
+    onExitEditMode();
+    setOpenExitConfirmDialog(false);
+    // force refresh to clear any unsaved changes
+    refreshStructure();
   };
 
   // Handle adding a new field
@@ -193,10 +255,19 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
 
   // Handle field deletion
   const handleDeleteField = async () => {
-    if (activeField) {
+    if (activeField?.field && activeField.groupId) {
+      const fieldIdToDelete = activeField.field.id;
+      const groupIdOfDeletedField = activeField.groupId; // Capture before activeField is nulled
+
       try {
-        await removeField(activeField.id);
-        handleFieldMenuClose();
+        handleFieldMenuClose(); // This will set activeField to null
+        await removeField(fieldIdToDelete);
+
+        // Focus management: Move focus to the "Add Field" button of the group
+        const buttonRef = addFieldButtonRefs.current[groupIdOfDeletedField];
+        if (buttonRef) {
+          buttonRef.focus();
+        }
       } catch (error) {
         console.error("Error removing field:", error);
       }
@@ -205,9 +276,9 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
 
   // Handle field rename
   const handleRenameField = () => {
-    if (activeField) {
-      setRenamingFieldId(activeField.id);
-      setNewFieldName(activeField.name);
+    if (activeField?.field) {
+      setRenamingFieldId(activeField.field.id);
+      setNewFieldName(activeField.field.name);
       handleFieldMenuClose();
     }
   };
@@ -244,10 +315,11 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
   // Handle field menu open
   const handleFieldMenuOpen = (
     event: React.MouseEvent<HTMLElement>,
-    field: Field
+    field: Field,
+    groupId: string // Added groupId
   ) => {
     setFieldMenuAnchor(event.currentTarget);
-    setActiveField(field);
+    setActiveField({ field, groupId }); // Store field and groupId
   };
 
   // Handle field menu close
@@ -311,8 +383,7 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
   const handleDeleteGroup = async () => {
     if (activeGroup) {
       try {
-        // This would need to be implemented in useJournalStructure -- I will take care of it
-        // TODO: await removeGroup(activeGroup.id);
+        await removeGroup(activeGroup.id);
         console.log("Delete group:", activeGroup.id);
         handleGroupMenuClose();
       } catch (error) {
@@ -464,9 +535,18 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
           alignItems="center"
           mb={4}
         >
-          <Typography variant="h4" component="h1">
-            Edit Journal
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center" }}>
+            <IconButton
+              onClick={handleExitClick}
+              aria-label="back to journal"
+              sx={{ mr: 1 }}
+            >
+              <ArrowBackIcon />
+            </IconButton>
+            <Typography variant="h4" component="h1">
+              Edit Journal
+            </Typography>
+          </Box>
 
           <Button
             variant="contained"
@@ -512,7 +592,7 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
             p: 3,
             borderRadius: 2,
             bgcolor: theme.palette.background.default,
-            border: "1px solid",
+            border: "0px solid",
             borderColor: "divider",
             borderWidth: "1px",
             boxShadow: "none",
@@ -703,6 +783,9 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
                                     handleFieldRenameInputBlur
                                   }
                                   handleFieldMenuOpen={handleFieldMenuOpen}
+                                  addFieldType={addFieldType}
+                                  updateFieldType={updateFieldType}
+                                  removeFieldType={removeFieldType}
                                 />
                               </React.Fragment>
                             ))
@@ -742,6 +825,12 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
                     {/* Add field button */}
                     <Box sx={{ textAlign: "center" }}>
                       <Button
+                        ref={(el) => {
+                          if (group.id) {
+                            // Ensure group.id is valid before using as key
+                            addFieldButtonRefs.current[group.id] = el;
+                          }
+                        }}
                         variant="outlined"
                         startIcon={<AddIcon />}
                         onClick={() => handleAddField(group.id)}
@@ -784,7 +873,11 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
           <ArrowDownIcon fontSize="small" sx={{ mr: 1 }} />
           Move Down
         </MenuItem>
-        <MenuItem onClick={handleDeleteGroup} sx={{ color: "error.main" }}>
+        <MenuItem
+          onClick={handleDeleteGroup}
+          sx={{ color: "error.main" }}
+          disabled={structure.groups.length <= 1}
+        >
           Delete Group
         </MenuItem>
       </Menu>
@@ -800,6 +893,28 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
           Delete Field
         </MenuItem>
       </Menu>
+
+      {/* Exit Confirmation Dialog */}
+      <Dialog
+        open={openExitConfirmDialog}
+        onClose={handleCloseExitConfirmDialog}
+        aria-labelledby="alert-dialog-title"
+        aria-describedby="alert-dialog-description"
+      >
+        <DialogTitle id="alert-dialog-title">{"Unsaved Changes"}</DialogTitle>
+        <DialogContent>
+          <DialogContentText id="alert-dialog-description">
+            You have unsaved changes. Do you want to save them before leaving?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseExitConfirmDialog}>Cancel</Button>
+          <Button onClick={handleExitWithoutSaving}>Exit Without Saving</Button>
+          <Button onClick={handleSaveAndExit} color="primary" autoFocus>
+            Save and Exit
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };
@@ -815,8 +930,22 @@ interface SortableFieldItemProps {
   handleFieldRenameInputBlur: () => void;
   handleFieldMenuOpen: (
     event: React.MouseEvent<HTMLElement>,
-    field: Field
+    field: Field,
+    groupId: string // Added groupId
   ) => void;
+  // Add field type management methods
+  addFieldType: (
+    fieldId: string,
+    kind: FieldTypeKind,
+    description?: string,
+    dataOptions?: Record<string, string | number>,
+    order?: number
+  ) => Promise<FieldType | null>;
+  updateFieldType: (
+    fieldTypeId: string,
+    updates: Partial<Omit<FieldType, "id" | "fieldId" | "kind">>
+  ) => Promise<boolean>;
+  removeFieldType: (fieldTypeId: string) => Promise<boolean>;
 }
 
 const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
@@ -828,6 +957,9 @@ const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
   handleFieldRenameSubmit,
   handleFieldRenameInputBlur,
   handleFieldMenuOpen,
+  addFieldType,
+  updateFieldType,
+  removeFieldType,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({
@@ -844,44 +976,40 @@ const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
   };
 
   const renamingFieldRef = useRef<HTMLInputElement>(null);
-  const [showFieldTypes, setShowFieldTypes] = useState(false);
-  const [addingFieldType, setAddingFieldType] = useState(false);
-  const [selectedFieldTypeKind, setSelectedFieldTypeKind] =
-    useState<FieldTypeKind | null>(null);
+  const [showFieldTypes, setShowFieldTypes] = useState(true);
+  const [fieldTypeMenuAnchor, setFieldTypeMenuAnchor] =
+    useState<null | HTMLElement>(null);
 
   // Handle adding a new field type
-  const handleAddFieldType = async () => {
-    if (!selectedFieldTypeKind) return;
-
+  const handleAddFieldType = async (fieldTypeKind: FieldTypeKind) => {
     try {
-      // TODO: This would need to be implemented in useJournalStructure
-      console.log(
-        "Add field type:",
-        selectedFieldTypeKind,
-        "to field:",
-        field.id
-      );
-      // Reset state
-      setAddingFieldType(false);
-      setSelectedFieldTypeKind(null);
+      await addFieldType(field.id, fieldTypeKind);
+      // Close the menu
+      setFieldTypeMenuAnchor(null);
     } catch (error) {
       console.error("Error adding field type:", error);
     }
   };
 
   // Handle field type update
-  const handleFieldTypeUpdate = (
+  const handleFieldTypeUpdate = async (
     fieldTypeId: string,
     updates: Partial<FieldType>
   ) => {
-    // TODO: This would need to be implemented in useJournalStructure
-    console.log("Update field type:", fieldTypeId, "with:", updates);
+    try {
+      await updateFieldType(fieldTypeId, updates);
+    } catch (error) {
+      console.error("Error updating field type:", error);
+    }
   };
 
   // Handle field type deletion
-  const handleDeleteFieldType = (fieldTypeId: string) => {
-    // TODO: This would need to be implemented in useJournalStructure
-    console.log("Delete field type:", fieldTypeId);
+  const handleDeleteFieldType = async (fieldTypeId: string) => {
+    try {
+      await removeFieldType(fieldTypeId);
+    } catch (error) {
+      console.error("Error deleting field type:", error);
+    }
   };
 
   useEffect(() => {
@@ -963,11 +1091,11 @@ const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
             onClick={() => setShowFieldTypes(!showFieldTypes)}
             sx={{ mr: 1 }}
           >
-            {showFieldTypes ? "Hide Field Types" : "Show Field Types"}
+            {showFieldTypes ? "Hide Details" : "Show Details"}
           </Button>
           <IconButton
             size="small"
-            onClick={(e) => handleFieldMenuOpen(e, field)}
+            onClick={(e) => handleFieldMenuOpen(e, field, groupId)} // Pass groupId here
             aria-label="field options"
           >
             <MoreVertIcon />
@@ -978,10 +1106,6 @@ const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
       {/* Field Types section */}
       <Collapse in={showFieldTypes}>
         <Box sx={{ mt: 2, pl: 4 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            Field Types
-          </Typography>
-
           {/* List existing field types */}
           {field.fieldTypes
             .filter((ft) => ft.kind !== "CHECK") // Don't show CHECK field type
@@ -1029,78 +1153,41 @@ const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
               </Box>
             ))}
 
-          {/* Add new field type */}
-          {!addingFieldType ? (
+          {/* Add new field type - centered button */}
+          <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
             <Button
               variant="outlined"
               size="small"
               startIcon={<AddIcon />}
-              onClick={() => setAddingFieldType(true)}
-              sx={{ mt: 1 }}
+              onClick={(e) => setFieldTypeMenuAnchor(e.currentTarget)}
+              sx={{ borderRadius: 2 }}
             >
               Add Field Type
             </Button>
-          ) : (
-            <Box
-              sx={{
-                mt: 2,
-                p: 2,
-                border: "1px dashed",
-                borderColor: "primary.main",
-                borderRadius: 1,
-              }}
-            >
-              <Typography variant="body2" gutterBottom>
-                Select Field Type:
-              </Typography>
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <Select
-                  fullWidth
-                  size="small"
-                  value={selectedFieldTypeKind || ""}
-                  onChange={(e) =>
-                    setSelectedFieldTypeKind(e.target.value as FieldTypeKind)
-                  }
-                >
-                  <MenuItem value="NUMBER_NAVIGATION">
-                    Number with Navigation
-                  </MenuItem>
-                  <MenuItem value="NUMBER">Number</MenuItem>
-                  <MenuItem value="TIME_SELECT">Time Select</MenuItem>
-                  <MenuItem value="SEVERITY">Severity</MenuItem>
-                  <MenuItem value="RANGE">Range</MenuItem>
-                </Select>
+          </Box>
 
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    gap: 1,
-                    mt: 1,
-                  }}
-                >
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => {
-                      setAddingFieldType(false);
-                      setSelectedFieldTypeKind(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={handleAddFieldType}
-                    disabled={!selectedFieldTypeKind}
-                  >
-                    Add
-                  </Button>
-                </Box>
-              </Box>
-            </Box>
-          )}
+          {/* Field Type selection menu */}
+          <Menu
+            anchorEl={fieldTypeMenuAnchor}
+            open={Boolean(fieldTypeMenuAnchor)}
+            onClose={() => setFieldTypeMenuAnchor(null)}
+          >
+            <MenuItem onClick={() => handleAddFieldType("NUMBER_NAVIGATION")}>
+              Number with Navigation
+            </MenuItem>
+            <MenuItem onClick={() => handleAddFieldType("NUMBER")}>
+              Number
+            </MenuItem>
+            <MenuItem onClick={() => handleAddFieldType("TIME_SELECT")}>
+              Time Select
+            </MenuItem>
+            <MenuItem onClick={() => handleAddFieldType("SEVERITY")}>
+              Severity
+            </MenuItem>
+            <MenuItem onClick={() => handleAddFieldType("RANGE")}>
+              Range
+            </MenuItem>
+          </Menu>
         </Box>
       </Collapse>
     </Box>

@@ -19,17 +19,23 @@ const CheckFieldView: React.FC<CheckFieldViewProps> = ({
   disabled = false,
 }) => {
   return (
-    <FormControlLabel
-      control={
-        <Switch
-          checked={value}
-          onChange={(e) => onChange(e.target.checked)}
-          disabled={disabled}
-          color="primary"
-        />
-      }
-      label={value ? "YES" : "NO"}
-      labelPlacement="start"
+    // <FormControlLabel
+    //   control={
+    //     <Switch
+    //       checked={value}
+    //       onChange={(e) => onChange(e.target.checked)}
+    //       disabled={disabled}
+    //       color="primary"
+    //     />
+    //   }
+    //   label={value ? "YES" : "NO"}
+    //   labelPlacement="start"
+    // />
+    <Switch
+      checked={value}
+      onChange={(e) => onChange(e.target.checked)}
+      disabled={disabled}
+      color="primary"
     />
   );
 };

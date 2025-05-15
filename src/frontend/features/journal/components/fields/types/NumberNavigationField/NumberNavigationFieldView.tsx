@@ -12,8 +12,8 @@ export interface NumberNavigationFieldViewProps {
 
 /**
  * NumberNavigationFieldView component
- * Renders a number input with increment/decrement buttons
- * Format: [-] [Number] [+]
+ * Renders a number input with increment/decrement buttons inline with description.
+ * Format: [Description] [-] [Number] [+] [Unit]
  */
 const NumberNavigationFieldView: React.FC<NumberNavigationFieldViewProps> = ({
   value,
@@ -89,18 +89,33 @@ const NumberNavigationFieldView: React.FC<NumberNavigationFieldViewProps> = ({
   };
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", mb: 2 }}>
+    // Main container: flex row, align items center
+    <Box sx={{ display: "flex", alignItems: "center", mb: 2, gap: 1 }}>
       {fieldType.description && (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+        <Typography variant="body1" color="text.primary" sx={{ flexShrink: 0 }}>
           {fieldType.description}
         </Typography>
       )}
-      <Box sx={{ display: "flex", alignItems: "center" }}>
+      {/* Input group: flex row, align items center */}
+      <Box
+        sx={{
+          ml: 2,
+          display: "flex",
+          alignItems: "center",
+          flexGrow: 1, // Take up remaining space
+          justifyContent: "center", // Center the content horizontally
+        }}
+      >
+        {/* This inner Box contains the elements to be centered */}
+        {/* We might not strictly need it if IconButton/TextField/IconButton are direct children */}
+        {/* but keeping it for clarity for now */}
+        {/* <Box sx={{ display: 'flex', alignItems: 'center' }}> */}
         <IconButton
           onClick={handleDecrement}
           disabled={disabled || (value !== null && value <= minValue)}
           size="small"
           sx={{
+            // ml: 2,
             bgcolor: "action.hover",
             borderRadius: 1,
             "&:hover": { bgcolor: "action.selected" },
@@ -121,12 +136,24 @@ const NumberNavigationFieldView: React.FC<NumberNavigationFieldViewProps> = ({
             min: minValue,
             max: maxValue,
             style: { textAlign: "center" },
+            // Hide spin buttons for number input
+            step: "any", // Allows any number, often helps with hiding spinners
           }}
           sx={{
             mx: 1,
             width: "80px",
             "& .MuiOutlinedInput-root": {
               borderRadius: 1,
+            },
+            // Hide spin buttons (Webkit browsers like Chrome, Safari)
+            "& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button":
+              {
+                "-webkit-appearance": "none",
+                margin: 0,
+              },
+            // Hide spin buttons (Firefox)
+            "& input[type=number]": {
+              "-moz-appearance": "textfield",
             },
           }}
         />
@@ -143,12 +170,23 @@ const NumberNavigationFieldView: React.FC<NumberNavigationFieldViewProps> = ({
         >
           <AddIcon fontSize="small" />
         </IconButton>
-
-        {unitLabel && (
-          <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-            {unitLabel}
-          </Typography>
-        )}
+        {/* </Box> */}
+        {/* Unit Label Container (Fixed Width on the Right) */}
+        <Box sx={{ width: "100px", textAlign: "left", flexShrink: 0 }}>
+          {unitLabel && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                ml: 1,
+                minWidth: "30px",
+                textAlign: "left" /* Ensure space for unit */,
+              }}
+            >
+              {unitLabel}
+            </Typography>
+          )}
+        </Box>
       </Box>
     </Box>
   );

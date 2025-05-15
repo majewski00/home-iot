@@ -44,7 +44,7 @@ export interface FieldType {
   fieldId: string;
   kind: FieldTypeKind | "CHECK"; // CHECK is a special case for checkbox associated with all Field
   description?: string; // e.g., "When did it occur?"
-  dataOptions?: Record<string, string | number | undefined>; // e.g., "Hours", "Minutes", "Servings", max/min range, etc. - depending on the kind
+  dataOptions?: Record<string, string | number | boolean | undefined>; // e.g., "Hours", "Minutes", "Servings", max/min range, etc. - depending on the kind
   order: number;
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -64,7 +64,6 @@ export interface FieldValue {
   fieldId: string;
   fieldTypeId: string;
   value: string | boolean | number | null; // Stored as string, parsed based on field type
-  filled: boolean; // Whether the field has been filled (YES/NO)
   createdAt: Date | string;
   updatedAt: Date | string;
 }

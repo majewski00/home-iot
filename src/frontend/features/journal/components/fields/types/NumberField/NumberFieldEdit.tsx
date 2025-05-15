@@ -1,17 +1,42 @@
 import React, { useState } from "react";
-import { Box, TextField, Typography, Grid } from "@mui/material";
+import {
+  Box,
+  TextField,
+  Typography,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  SelectChangeEvent, // Import SelectChangeEvent
+} from "@mui/material";
 import { FieldType } from "@src-types/journal/journal.types";
 
+// Define unit options
+const unitOptions = [
+  "Times",
+  "Servings",
+  "mg",
+  "g",
+  "ml",
+  "L",
+  "Minutes",
+  "Hours",
+  "kcal",
+  "Steps",
+];
+
 export interface NumberFieldEditProps {
+  // Renamed from NumberNavigationFieldEditProps
   fieldType: FieldType;
   onUpdate?: (updates: Partial<FieldType>) => void;
 }
 
 /**
- * NumberFieldEdit component
+ * NumberFieldEdit component // Renamed from NumberNavigationFieldEdit
  * Allows configuration of a NumberField
  */
 const NumberFieldEdit: React.FC<NumberFieldEditProps> = ({
+  // Renamed from NumberNavigationFieldEdit
   fieldType,
   onUpdate,
 }) => {
@@ -19,10 +44,10 @@ const NumberFieldEdit: React.FC<NumberFieldEditProps> = ({
   const [description, setDescription] = useState<string>(
     fieldType.description || ""
   );
-  const [minValue, setMinValue] = useState<number | undefined>(
+  const [minValue, setMinValue] = useState<number>(
     fieldType.dataOptions?.min !== undefined
       ? Number(fieldType.dataOptions.min)
-      : undefined
+      : 0
   );
   const [maxValue, setMaxValue] = useState<number | undefined>(
     fieldType.dataOptions?.max !== undefined
@@ -44,8 +69,7 @@ const NumberFieldEdit: React.FC<NumberFieldEditProps> = ({
 
   // Handle min value change
   const handleMinValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    const newMinValue = value === "" ? undefined : Number(value);
+    const newMinValue = Number(e.target.value);
     setMinValue(newMinValue);
     if (onUpdate) {
       onUpdate({
@@ -72,9 +96,9 @@ const NumberFieldEdit: React.FC<NumberFieldEditProps> = ({
     }
   };
 
-  // Handle unit label change
-  const handleUnitLabelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newUnitLabel = e.target.value;
+  // Handle unit label change for Select component
+  const handleUnitLabelChange = (event: SelectChangeEvent<string>) => {
+    const newUnitLabel = event.target.value;
     setUnitLabel(newUnitLabel);
     if (onUpdate) {
       onUpdate({
@@ -89,70 +113,144 @@ const NumberFieldEdit: React.FC<NumberFieldEditProps> = ({
   return (
     <Box
       sx={{
-        p: 2,
-        border: "1px solid",
-        borderColor: "divider",
-        borderRadius: 1,
-        mb: 2,
+        p: 2, // Keep padding for inner content spacing
+        // border: "1px solid", // Remove border
+        // borderColor: "divider", // Remove border color
+        // borderRadius: 1, // Remove border radius
+        mb: 2, // Keep margin bottom
       }}
     >
-      <Typography variant="subtitle2" gutterBottom>
+      {/* <Typography variant="subtitle2" gutterBottom> // Remove Title
         Number Field Settings
-      </Typography>
+      </Typography> */}
 
-      <Grid container spacing={2}>
-        <Grid sx={{ gap: 12 }}>
+      {/* Row 1: Description & Min Value */}
+      <Box
+        display="flex"
+        sx={{ flexDirection: { xs: "column", sm: "row" }, gap: 2, mb: 2 }}
+      >
+        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
           <TextField
             fullWidth
             label="Description"
             value={description}
             onChange={handleDescriptionChange}
-            margin="normal"
             size="small"
-            placeholder="e.g., Enter a value"
+            placeholder="e.g., How many times?"
+            // Removed margin="normal" as gap handles spacing
           />
-        </Grid>
+        </Box>
+        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
+          {/* Unit Label Select */}
+          <FormControl fullWidth size="small">
+            {" "}
+            {/* Removed margin="normal" */}
+            <InputLabel id="unit-label-select-label">
+              Unit Label (optional)
+            </InputLabel>
+            <Select
+              labelId="unit-label-select-label"
+              id="unit-label-select"
+              value={unitLabel}
+              label="Unit Label (optional)"
+              onChange={handleUnitLabelChange}
+            >
+              <MenuItem value="">
+                <em>--</em>
+              </MenuItem>
+              {unitOptions.map((unit) => (
+                <MenuItem key={unit} value={unit}>
+                  {unit}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+      </Box>
 
-        <Grid sx={{ gap: 6 }}>
+      {/* Row 2: Max Value & Unit Label */}
+      <Box
+        display="flex"
+        sx={{ flexDirection: { xs: "column", sm: "row" }, gap: 2 }}
+      >
+        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
           <TextField
             fullWidth
-            label="Minimum Value (optional)"
+            label="Minimum Value"
             type="number"
-            value={minValue === undefined ? "" : minValue}
+            value={minValue}
             onChange={handleMinValueChange}
-            margin="normal"
             size="small"
-            placeholder="No minimum"
+            // Removed margin="normal"
           />
-        </Grid>
-
-        <Grid sx={{ gap: 6 }}>
+        </Box>
+        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
           <TextField
             fullWidth
             label="Maximum Value (optional)"
             type="number"
             value={maxValue === undefined ? "" : maxValue}
             onChange={handleMaxValueChange}
-            margin="normal"
             size="small"
-            placeholder="No maximum"
+            placeholder="No limit"
+            // Removed margin="normal"
           />
-        </Grid>
+        </Box>
+      </Box>
 
-        <Grid sx={{ gap: 12 }}>
+      {/* Static Placeholder Preview */}
+      <Box
+        sx={{
+          mt: 3,
+          p: 1,
+          // Removed border and opacity
+        }}
+      >
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          display="block"
+          sx={{ mb: 1, textAlign: "center" }} // Center align the text
+        >
+          Preview:
+        </Typography>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
           <TextField
-            fullWidth
-            label="Unit Label (optional)"
-            value={unitLabel}
-            onChange={handleUnitLabelChange}
-            margin="normal"
+            disabled
             size="small"
-            placeholder="e.g., kg, cm, etc."
+            value="0" // Placeholder value
+            inputProps={{ style: { textAlign: "center" } }}
+            sx={{
+              mx: 1,
+              width: "80px", // Match width from View component
+              "& .MuiInputBase-input.Mui-disabled": {
+                "-webkit-text-fill-color": "rgba(0, 0, 0, 0.6)", // Ensure text color in disabled state
+              },
+              "& .MuiOutlinedInput-root.Mui-disabled .MuiOutlinedInput-notchedOutline":
+                {
+                  borderColor: "rgba(0, 0, 0, 0.26)", // Match disabled border color
+                },
+            }}
           />
-        </Grid>
-      </Grid>
+          {unitLabel && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ ml: 1, minWidth: "30px" }}
+            >
+              {unitLabel}
+            </Typography>
+          )}
+        </Box>
+      </Box>
     </Box>
   );
 };
 
-export default NumberFieldEdit;
+export default NumberFieldEdit; // Renamed from NumberNavigationFieldEdit

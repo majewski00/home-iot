@@ -16,7 +16,7 @@ export interface BaseItem {
 export function stripBaseItem<T extends BaseItem>(
   item: T
 ): Omit<T, keyof BaseItem> {
-  const { PK, SK, ...rest } = item;
+  const { PK, SK, userId, ...rest } = item;
   return rest as Omit<T, keyof BaseItem>;
 }
 

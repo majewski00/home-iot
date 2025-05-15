@@ -26,7 +26,7 @@ export interface UseJournalStructureMethods {
   addFieldType: (
     fieldId: string,
     kind: FieldTypeKind,
-    name: string,
+    description?: string,
     dataOptions?: Record<string, string | number>
   ) => Promise<FieldType | null>;
   updateGroup: (
@@ -111,6 +111,7 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
     try {
       const journalStructure = await fetchJournalStructure();
       setStructure(journalStructure);
+
       setHasChanges(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
@@ -267,7 +268,7 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
   const addFieldType = async (
     fieldId: string,
     kind: FieldTypeKind,
-    description: string,
+    description?: string,
     dataOptions?: Record<string, string | number>,
     order?: number
   ): Promise<FieldType | null> => {

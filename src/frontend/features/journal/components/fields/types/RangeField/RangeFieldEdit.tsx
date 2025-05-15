@@ -1,52 +1,94 @@
-import React, { useState } from "react";
-import { Box, TextField, Typography, Grid, Slider } from "@mui/material";
+import React, { useState, useMemo } from "react";
+import {
+  Box,
+  TextField,
+  Typography,
+  Slider,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  FormControlLabel,
+  Switch,
+} from "@mui/material";
+import { SelectChangeEvent } from "@mui/material/Select";
 import { FieldType } from "@src-types/journal/journal.types";
+
+interface Mark {
+  value: number;
+  label: string;
+}
+
+const unitOptions = [
+  "",
+  "%",
+  "points",
+  "times",
+  "count",
+  "level",
+  "kg",
+  "g",
+  "mg",
+  "cm",
+  "m",
+  "mm",
+  "L",
+  "ml",
+  "sec",
+  "min",
+  "hr",
+  "days",
+  "kcal",
+];
 
 export interface RangeFieldEditProps {
   fieldType: FieldType;
   onUpdate?: (updates: Partial<FieldType>) => void;
 }
 
-/**
- * RangeFieldEdit component
- * Allows configuration of a RangeField
- */
 const RangeFieldEdit: React.FC<RangeFieldEditProps> = ({
   fieldType,
   onUpdate,
 }) => {
-  // Get current values from dataOptions or set defaults
   const [description, setDescription] = useState<string>(
     fieldType.description || ""
   );
   const [minValue, setMinValue] = useState<number>(
-    fieldType.dataOptions?.min !== undefined
-      ? Number(fieldType.dataOptions.min)
-      : 0
+    Number(fieldType.dataOptions?.min ?? 0)
   );
   const [maxValue, setMaxValue] = useState<number>(
-    fieldType.dataOptions?.max !== undefined
-      ? Number(fieldType.dataOptions.max)
-      : 100
+    Number(fieldType.dataOptions?.max ?? 100)
   );
   const [step, setStep] = useState<number>(
-    fieldType.dataOptions?.step !== undefined
-      ? Number(fieldType.dataOptions.step)
-      : 1
+    Number(fieldType.dataOptions?.step ?? 1)
   );
   const [unitLabel, setUnitLabel] = useState<string>(
     (fieldType.dataOptions?.unit as string) || ""
   );
+  const [markAllValues, setMarkAllValues] = useState<boolean>(
+    fieldType.dataOptions?.markAllValues === true
+  );
 
-  // Format value with unit if available
   const formatValue = (val: number): string => {
-    if (unitLabel) {
-      return `${val} ${unitLabel}`;
-    }
-    return val.toString();
+    return unitLabel ? `${val} ${unitLabel}` : val.toString();
   };
 
-  // Handle description change
+  const updateDataOptions = (updates: Record<string, any>) => {
+    if (onUpdate) {
+      onUpdate({
+        dataOptions: {
+          ...fieldType.dataOptions,
+          min: minValue,
+          max: maxValue,
+          step: step,
+          unit: unitLabel,
+          markAllValues: markAllValues,
+          ...updates,
+        },
+      });
+    }
+  };
+
   const handleDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newDescription = e.target.value;
     setDescription(newDescription);
@@ -55,187 +97,219 @@ const RangeFieldEdit: React.FC<RangeFieldEditProps> = ({
     }
   };
 
-  // Handle min value change
   const handleMinValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newMinValue = Number(e.target.value);
     if (!isNaN(newMinValue)) {
       setMinValue(newMinValue);
-      if (onUpdate) {
-        onUpdate({
-          dataOptions: {
-            ...fieldType.dataOptions,
-            min: newMinValue,
-          },
-        });
-      }
+      updateDataOptions({ min: newMinValue });
     }
   };
 
-  // Handle max value change
   const handleMaxValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newMaxValue = Number(e.target.value);
     if (!isNaN(newMaxValue)) {
       setMaxValue(newMaxValue);
-      if (onUpdate) {
-        onUpdate({
-          dataOptions: {
-            ...fieldType.dataOptions,
-            max: newMaxValue,
-          },
-        });
-      }
+      updateDataOptions({ max: newMaxValue });
     }
   };
 
-  // Handle step change
   const handleStepChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newStep = Number(e.target.value);
-    if (!isNaN(newStep) && newStep > 0) {
+    if (!isNaN(newStep) && newStep >= 1) {
       setStep(newStep);
-      if (onUpdate) {
-        onUpdate({
-          dataOptions: {
-            ...fieldType.dataOptions,
-            step: newStep,
-          },
+      updateDataOptions({ step: newStep });
+    }
+  };
+
+  const handleUnitLabelChange = (event: SelectChangeEvent<string>) => {
+    const newUnitLabel = event.target.value as string;
+    setUnitLabel(newUnitLabel);
+    updateDataOptions({ unit: newUnitLabel });
+  };
+
+  const handleMarkAllValuesChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const newMarkAllValues = event.target.checked;
+    setMarkAllValues(newMarkAllValues);
+    updateDataOptions({ markAllValues: newMarkAllValues });
+  };
+
+  const generateMarks = useMemo((): Mark[] => {
+    if (minValue >= maxValue || step <= 0) {
+      return [{ value: minValue, label: formatValue(minValue) }];
+    }
+
+    if (markAllValues) {
+      const marks: Mark[] = [];
+      for (let i = minValue; i <= maxValue; i += step) {
+        marks.push({ value: i, label: formatValue(i) });
+      }
+
+      if (marks.length > 0 && marks[marks.length - 1].value < maxValue) {
+        marks.push({ value: maxValue, label: formatValue(maxValue) });
+      }
+
+      return marks
+        .filter(
+          (mark, index, self) =>
+            index === self.findIndex((m) => m.value === mark.value)
+        )
+        .sort((a, b) => a.value - b.value);
+    }
+
+    // If not showing all marks, show a smart selection
+    const smartMarks: Mark[] = [
+      { value: minValue, label: formatValue(minValue) },
+    ];
+
+    // Add some intermediate marks if range is large enough
+    if (maxValue - minValue > step * 2) {
+      const middleValue = minValue + Math.floor((maxValue - minValue) / 2);
+      const nearestStep = Math.round(middleValue / step) * step;
+      if (nearestStep > minValue && nearestStep < maxValue) {
+        smartMarks.push({
+          value: nearestStep,
+          label: formatValue(nearestStep),
         });
       }
     }
-  };
 
-  // Handle unit label change
-  const handleUnitLabelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newUnitLabel = e.target.value;
-    setUnitLabel(newUnitLabel);
-    if (onUpdate) {
-      onUpdate({
-        dataOptions: {
-          ...fieldType.dataOptions,
-          unit: newUnitLabel,
-        },
-      });
-    }
-  };
-
-  // Calculate marks for the preview slider
-  const calculateMarks = () => {
-    const range = maxValue - minValue;
-    const markCount = Math.min(5, range + 1); // Max 5 marks
-
-    if (markCount <= 1)
-      return [{ value: minValue, label: formatValue(minValue) }];
-
-    const marks = [];
-    const stepSize = range / (markCount - 1);
-
-    for (let i = 0; i < markCount; i++) {
-      const value = minValue + i * stepSize;
-      marks.push({
-        value,
-        label: formatValue(Math.round(value)),
-      });
+    // Add max value if not already included
+    if (maxValue > minValue) {
+      smartMarks.push({ value: maxValue, label: formatValue(maxValue) });
     }
 
-    return marks;
-  };
-
-  const marks = calculateMarks();
+    return smartMarks;
+  }, [minValue, maxValue, step, unitLabel, markAllValues, formatValue]);
 
   return (
-    <Box
-      sx={{
-        p: 2,
-        border: "1px solid",
-        borderColor: "divider",
-        borderRadius: 1,
-        mb: 2,
-      }}
-    >
-      <Typography variant="subtitle2" gutterBottom>
-        Range Field Settings
-      </Typography>
+    <Box sx={{ p: 2, mb: 2 }}>
+      <Box sx={{ mb: 2 }}>
+        <TextField
+          fullWidth
+          label="Description"
+          value={description}
+          onChange={handleDescriptionChange}
+          size="small"
+          placeholder="e.g., Rate your mood"
+        />
+      </Box>
 
-      <Grid container spacing={2}>
-        <Grid sx={{ gap: 12 }}>
-          <TextField
-            fullWidth
-            label="Description"
-            value={description}
-            onChange={handleDescriptionChange}
-            margin="normal"
-            size="small"
-            placeholder="e.g., Select a value"
-          />
-        </Grid>
-
-        <Grid sx={{ gap: 6 }}>
-          <TextField
-            fullWidth
-            label="Minimum Value"
-            type="number"
-            value={minValue}
-            onChange={handleMinValueChange}
-            margin="normal"
-            size="small"
-          />
-        </Grid>
-
-        <Grid sx={{ gap: 6 }}>
-          <TextField
-            fullWidth
-            label="Maximum Value"
-            type="number"
-            value={maxValue}
-            onChange={handleMaxValueChange}
-            margin="normal"
-            size="small"
-          />
-        </Grid>
-
-        <Grid sx={{ gap: 6 }}>
+      <Box
+        display="flex"
+        sx={{ flexDirection: { xs: "column", sm: "row" }, gap: 2, mb: 2 }}
+      >
+        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
+          <FormControl fullWidth size="small">
+            <InputLabel id="unit-label-select-label">
+              Unit Label (optional)
+            </InputLabel>
+            <Select
+              labelId="unit-label-select-label"
+              value={unitLabel}
+              label="Unit Label (optional)"
+              onChange={handleUnitLabelChange}
+            >
+              {unitOptions.map((unit) => (
+                <MenuItem key={unit} value={unit}>
+                  {unit || <em>--</em>}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
           <TextField
             fullWidth
             label="Step"
             type="number"
             value={step}
             onChange={handleStepChange}
-            margin="normal"
             size="small"
-            inputProps={{ min: 0.01 }}
+            inputProps={{ min: 1, step: 1 }}
             helperText="Increment between values"
           />
-        </Grid>
+        </Box>
+      </Box>
 
-        <Grid sx={{ gap: 6 }}>
+      <Box
+        display="flex"
+        sx={{ flexDirection: { xs: "column", sm: "row" }, gap: 2, mb: 2 }}
+      >
+        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
           <TextField
             fullWidth
-            label="Unit Label (optional)"
-            value={unitLabel}
-            onChange={handleUnitLabelChange}
-            margin="normal"
+            label="Minimum Value"
+            type="number"
+            value={minValue}
+            onChange={handleMinValueChange}
             size="small"
-            placeholder="e.g., kg, cm, etc."
           />
-        </Grid>
+        </Box>
+        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
+          <TextField
+            fullWidth
+            label="Maximum Value"
+            type="number"
+            value={maxValue}
+            onChange={handleMaxValueChange}
+            size="small"
+          />
+        </Box>
+      </Box>
 
-        <Grid sx={{ gap: 12 }}>
-          <Typography variant="body2" gutterBottom>
-            Preview:
-          </Typography>
-          <Box sx={{ px: 2, py: 1 }}>
-            <Slider
-              min={minValue}
-              max={maxValue}
-              step={step}
-              marks={marks}
-              value={(maxValue + minValue) / 2}
-              valueLabelDisplay="auto"
-              valueLabelFormat={formatValue}
-              disabled={false}
+      <Box sx={{ mb: 3 }}>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={markAllValues}
+              onChange={handleMarkAllValuesChange}
+              size="small"
             />
-          </Box>
-        </Grid>
-      </Grid>
+          }
+          label="Show all step marks in preview"
+        />
+      </Box>
+
+      <Box sx={{ mt: 2, opacity: 0.6 }}>
+        <Typography
+          variant="caption"
+          display="block"
+          gutterBottom
+          sx={{ textAlign: "center", color: "text.secondary", mb: 1 }}
+        >
+          Preview
+        </Typography>
+        <Box sx={{ px: 1 }}>
+          <Slider
+            disabled
+            value={minValue}
+            min={minValue}
+            max={maxValue}
+            step={step}
+            marks={generateMarks}
+            valueLabelDisplay="off"
+            sx={{
+              "& .MuiSlider-thumb": {
+                backgroundColor: "grey.500",
+              },
+              "& .MuiSlider-track": {
+                backgroundColor: "grey.500",
+              },
+              "& .MuiSlider-rail": {
+                backgroundColor: "grey.300",
+              },
+              "& .MuiSlider-markLabel": {
+                color: "text.disabled",
+              },
+              "& .MuiSlider-mark": {
+                backgroundColor: "grey.400",
+              },
+            }}
+          />
+        </Box>
+      </Box>
     </Box>
   );
 };

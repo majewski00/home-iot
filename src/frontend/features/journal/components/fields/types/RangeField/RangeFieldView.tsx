@@ -1,6 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Box, Slider, Typography } from "@mui/material";
 import { FieldType } from "@src-types/journal/journal.types";
+
+interface Mark {
+  value: number;
+  label: string;
+}
 
 export interface RangeFieldViewProps {
   value: number | null;
@@ -9,91 +14,89 @@ export interface RangeFieldViewProps {
   disabled?: boolean;
 }
 
-/**
- * RangeFieldView component
- * Renders a slider for selecting a value within a defined range
- */
 const RangeFieldView: React.FC<RangeFieldViewProps> = ({
-  value,
+  value: propValue,
   onChange,
   fieldType,
   disabled = false,
 }) => {
-  // Get min/max/step values from dataOptions or set defaults
-  const minValue =
-    fieldType.dataOptions?.min !== undefined
-      ? Number(fieldType.dataOptions.min)
-      : 0;
-
-  const maxValue =
-    fieldType.dataOptions?.max !== undefined
-      ? Number(fieldType.dataOptions.max)
-      : 100;
-
-  const step =
-    fieldType.dataOptions?.step !== undefined
-      ? Number(fieldType.dataOptions.step)
-      : 1;
-
-  // Get unit label from dataOptions if available
-  const unitLabel = fieldType.dataOptions?.unit as string | undefined;
-
-  // Get format function from dataOptions if available
-  const formatValue = (val: number): string => {
-    if (unitLabel) {
-      return `${val} ${unitLabel}`;
-    }
-    return val.toString();
-  };
-
-  // Local state for slider value
-  const [localValue, setLocalValue] = useState<number>(
-    value !== null ? value : minValue
+  const minValue = useMemo(
+    () => Number(fieldType.dataOptions?.min ?? 0),
+    [fieldType.dataOptions?.min]
   );
 
-  // Update local value when prop value changes
-  useEffect(() => {
-    setLocalValue(value !== null ? value : minValue);
-  }, [value, minValue]);
+  const maxValue = useMemo(
+    () => Number(fieldType.dataOptions?.max ?? 100),
+    [fieldType.dataOptions?.max]
+  );
 
-  // Handle slider change
+  const step = useMemo(
+    () => Number(fieldType.dataOptions?.step ?? 1),
+    [fieldType.dataOptions?.step]
+  );
+
+  const unitLabel = useMemo(
+    () => fieldType.dataOptions?.unit as string | undefined,
+    [fieldType.dataOptions?.unit]
+  );
+
+  const formatValue = useMemo(
+    () =>
+      (val: number): string =>
+        unitLabel ? `${val} ${unitLabel}` : val.toString(),
+    [unitLabel]
+  );
+
+  const generateMarks = useMemo((): Mark[] => {
+    const markAllValues = fieldType.dataOptions?.markAllValues === true;
+
+    if (minValue >= maxValue) {
+      return [{ value: minValue, label: formatValue(minValue) }];
+    }
+
+    if (markAllValues) {
+      const marks: Mark[] = [];
+      for (let i = minValue; i <= maxValue; i += step) {
+        marks.push({ value: i, label: formatValue(i) });
+      }
+
+      if (marks.length > 0 && marks[marks.length - 1].value < maxValue) {
+        marks.push({ value: maxValue, label: formatValue(maxValue) });
+      }
+
+      return marks;
+    }
+
+    return [
+      { value: minValue, label: formatValue(minValue) },
+      { value: maxValue, label: formatValue(maxValue) },
+    ];
+  }, [
+    minValue,
+    maxValue,
+    step,
+    formatValue,
+    fieldType.dataOptions?.markAllValues,
+  ]);
+
+  const [localValue, setLocalValue] = useState<number>(
+    propValue !== null ? propValue : minValue
+  );
+
+  useEffect(() => {
+    setLocalValue(propValue !== null ? propValue : minValue);
+  }, [propValue, minValue]);
+
   const handleChange = (_event: Event, newValue: number | number[]) => {
-    const numValue = newValue as number;
-    setLocalValue(numValue);
+    setLocalValue(newValue as number);
   };
 
-  // Handle slider change commit (when user releases slider)
   const handleChangeCommitted = (
     _event: React.SyntheticEvent | Event,
     newValue: number | number[]
   ) => {
-    const numValue = newValue as number;
-    onChange(numValue);
+    onChange(newValue as number);
   };
-
-  // Calculate marks for the slider
-  const calculateMarks = () => {
-    const range = maxValue - minValue;
-    const markCount = Math.min(5, range + 1); // Max 5 marks
-
-    if (markCount <= 1)
-      return [{ value: minValue, label: formatValue(minValue) }];
-
-    const marks = [];
-    const step = range / (markCount - 1);
-
-    for (let i = 0; i < markCount; i++) {
-      const value = minValue + i * step;
-      marks.push({
-        value,
-        label: formatValue(Math.round(value)),
-      });
-    }
-
-    return marks;
-  };
-
-  const marks = calculateMarks();
 
   return (
     <Box
@@ -105,7 +108,15 @@ const RangeFieldView: React.FC<RangeFieldViewProps> = ({
         </Typography>
       )}
 
-      <Box sx={{ px: 1, py: 2, width: "100%" }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          px: 1,
+          py: 1,
+          width: "90%",
+        }}
+      >
         <Slider
           value={localValue}
           onChange={handleChange}
@@ -113,20 +124,12 @@ const RangeFieldView: React.FC<RangeFieldViewProps> = ({
           min={minValue}
           max={maxValue}
           step={step}
-          marks={marks}
+          marks={generateMarks}
           valueLabelDisplay="auto"
           valueLabelFormat={formatValue}
-          disabled={disabled}
+          disabled={disabled || minValue >= maxValue}
+          sx={{ flexGrow: 1 }}
         />
-
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          align="center"
-          sx={{ mt: 1 }}
-        >
-          {formatValue(localValue)}
-        </Typography>
       </Box>
     </Box>
   );

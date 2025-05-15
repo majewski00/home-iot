@@ -1,5 +1,15 @@
 import React, { useState } from "react";
-import { Box, TextField, Typography, Grid } from "@mui/material";
+import {
+  Box,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Slider,
+  Typography,
+} from "@mui/material";
+import { SelectChangeEvent } from "@mui/material/Select";
 import { FieldType } from "@src-types/journal/journal.types";
 
 export interface TimeSelectFieldEditProps {
@@ -15,36 +25,17 @@ const TimeSelectFieldEdit: React.FC<TimeSelectFieldEditProps> = ({
   fieldType,
   onUpdate,
 }) => {
-  // Get current values from dataOptions or set defaults
   const [description, setDescription] = useState<string>(
     fieldType.description || ""
   );
   const [step, setStep] = useState<number>(
     fieldType.dataOptions?.step !== undefined
       ? Number(fieldType.dataOptions.step)
-      : 15 // 15 minutes
+      : 30
   );
 
-  // Fixed maxTime at 24 hours (1440 minutes)
-  const maxTime = 1440;
+  const maxTime = 1440; // 24 hours in minutes
 
-  // Convert minutes to hours and minutes for display
-  const formatTimeDisplay = (minutes: number): string => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-
-    if (hours === 0) {
-      return `${mins} minute${mins !== 1 ? "s" : ""}`;
-    } else if (mins === 0) {
-      return `${hours} hour${hours !== 1 ? "s" : ""}`;
-    } else {
-      return `${hours} hour${hours !== 1 ? "s" : ""} ${mins} minute${
-        mins !== 1 ? "s" : ""
-      }`;
-    }
-  };
-
-  // Handle description change
   const handleDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newDescription = e.target.value;
     setDescription(newDescription);
@@ -53,9 +44,8 @@ const TimeSelectFieldEdit: React.FC<TimeSelectFieldEditProps> = ({
     }
   };
 
-  // Handle step change
-  const handleStepChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newStep = Number(e.target.value);
+  const handleStepSelectChange = (event: SelectChangeEvent<number>) => {
+    const newStep = Number(event.target.value);
     if (!isNaN(newStep) && newStep > 0) {
       setStep(newStep);
       if (onUpdate) {
@@ -69,53 +59,93 @@ const TimeSelectFieldEdit: React.FC<TimeSelectFieldEditProps> = ({
     }
   };
 
-  return (
-    <Box
-      sx={{
-        p: 2,
-        border: "1px solid",
-        borderColor: "divider",
-        borderRadius: 1,
-        mb: 2,
-      }}
-    >
-      <Typography variant="subtitle2" gutterBottom>
-        Time Select Field Settings
-      </Typography>
+  const previewMarks = [
+    { value: 0, label: "0h" },
+    { value: maxTime / 4, label: `${maxTime / 240}h` }, // 6h
+    { value: maxTime / 2, label: `${maxTime / 120}h` }, // 12h
+    { value: (maxTime / 4) * 3, label: `${maxTime / 80}h` }, // 18h
+    { value: maxTime, label: `${maxTime / 60}h` }, // 24h
+  ];
 
-      <Grid container spacing={2}>
-        <Grid sx={{ gap: 12 }}>
+  return (
+    <Box sx={{ width: "100%", mb: 2 }}>
+      <Box
+        display="flex"
+        sx={{
+          flexDirection: { xs: "column", sm: "row" },
+          gap: 2, // Spacing between items
+          mb: 3, // Margin bottom for the whole row
+        }}
+      >
+        <Box sx={{ width: { xs: "100%", sm: "calc(66.66% - 8px)" } }}>
+          {" "}
+          {/* 2/3 width, accounting for half gap */}
           <TextField
             fullWidth
             label="Description"
             value={description}
             onChange={handleDescriptionChange}
-            margin="normal"
             size="small"
             placeholder="e.g., When did it happen?"
           />
-        </Grid>
+        </Box>
+        <Box sx={{ width: { xs: "100%", sm: "calc(33.33% - 8px)" } }}>
+          {" "}
+          {/* 1/3 width, accounting for half gap */}
+          <FormControl fullWidth size="small">
+            <InputLabel id="time-step-select-label">Interval</InputLabel>
+            <Select
+              labelId="time-step-select-label"
+              value={step}
+              label="Interval"
+              onChange={handleStepSelectChange}
+            >
+              <MenuItem value={15}>15 minutes</MenuItem>
+              <MenuItem value={30}>30 minutes</MenuItem>
+              <MenuItem value={60}>60 minutes</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+      </Box>
 
-        <Grid sx={{ gap: 12 }}>
-          <Typography variant="body2" gutterBottom>
-            Maximum Time: {formatTimeDisplay(maxTime)} (fixed at 24 hours)
-          </Typography>
-        </Grid>
-
-        <Grid sx={{ gap: 12 }}>
-          <TextField
-            fullWidth
-            label="Time Step (minutes)"
-            type="number"
-            value={step}
-            onChange={handleStepChange}
-            margin="normal"
-            size="small"
-            inputProps={{ min: 1 }}
-            helperText="Interval between selectable time values (in minutes)"
-          />
-        </Grid>
-      </Grid>
+      <Box sx={{ px: 1, opacity: 0.6 }}>
+        {" "}
+        {/* Apply opacity for "grayed out" look */}
+        <Typography
+          variant="caption"
+          display="block"
+          gutterBottom
+          sx={{ textAlign: "center", color: "text.secondary" }}
+        >
+          Preview
+        </Typography>
+        <Slider
+          disabled
+          value={0} // Static value, as it's non-interactive
+          min={0}
+          max={maxTime}
+          step={step}
+          marks={previewMarks}
+          valueLabelDisplay="off"
+          sx={{
+            "& .MuiSlider-thumb": {
+              backgroundColor: "grey.500", // Ensure thumb is visible but looks disabled
+            },
+            "& .MuiSlider-track": {
+              backgroundColor: "grey.500",
+            },
+            "& .MuiSlider-rail": {
+              backgroundColor: "grey.300",
+            },
+            "& .MuiSlider-markLabel": {
+              color: "text.disabled",
+            },
+            "& .MuiSlider-mark": {
+              backgroundColor: "grey.400",
+            },
+          }}
+        />
+      </Box>
     </Box>
   );
 };

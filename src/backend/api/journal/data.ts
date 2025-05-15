@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from "uuid";
 import { Router, Request, Response } from "express";
 import {
   putItem,
@@ -112,9 +111,12 @@ export default (router: Router) => {
           )
         )?.[0];
         if (!existingEntry) {
-          res.status(404).send({
-            message: "No entry found for this user.",
-          });
+          res.status(200).send({
+            date,
+            values: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as JournalEntry);
           return;
         } else {
           res.status(200).send(stripBaseItem(existingEntry));

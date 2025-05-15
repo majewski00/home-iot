@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Box, TextField, Typography, Grid } from "@mui/material";
+import { Box, TextField, Typography, Slider } from "@mui/material";
 import { FieldType } from "@src-types/journal/journal.types";
 
 export interface SeverityFieldEditProps {
@@ -15,21 +15,19 @@ const SeverityFieldEdit: React.FC<SeverityFieldEditProps> = ({
   fieldType,
   onUpdate,
 }) => {
-  // Get current values from dataOptions or set defaults
   const [description, setDescription] = useState<string>(
     fieldType.description || ""
   );
 
-  // Default severity levels (not editable for now)
-  const severityLevels = [
-    { value: 0, label: "None", color: "#9e9e9e" },
-    { value: 1, label: "Low", color: "#4caf50" },
-    { value: 2, label: "Moderate", color: "#ff9800" },
-    { value: 3, label: "High", color: "#f44336" },
-    { value: 4, label: "Very High", color: "#9c27b0" },
+  // Severity levels for preview (Low, Moderate, High, Very High)
+  // Colors are not needed for the preview slider as per feedback
+  const previewSeverityLevels = [
+    { value: 1, label: "Low" },
+    { value: 2, label: "Moderate" },
+    { value: 3, label: "High" },
+    { value: 4, label: "Very High" },
   ];
 
-  // Handle description change
   const handleDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newDescription = e.target.value;
     setDescription(newDescription);
@@ -38,70 +36,68 @@ const SeverityFieldEdit: React.FC<SeverityFieldEditProps> = ({
     }
   };
 
-  return (
-    <Box
-      sx={{
-        p: 2,
-        border: "1px solid",
-        borderColor: "divider",
-        borderRadius: 1,
-        mb: 2,
-      }}
-    >
-      <Typography variant="subtitle2" gutterBottom>
-        Severity Field Settings
-      </Typography>
+  const previewMarks = previewSeverityLevels.map((level) => ({
+    value: level.value,
+    label: level.label,
+  }));
 
-      <Grid container spacing={2}>
-        <Grid sx={{ gap: 12 }}>
+  return (
+    <Box sx={{ width: "100%", mb: 2 }}>
+      <Box
+        sx={{
+          mb: 2,
+        }}
+      >
+        <Box sx={{ width: "100%" }}>
+          {" "}
           <TextField
             fullWidth
             label="Description"
             value={description}
             onChange={handleDescriptionChange}
-            margin="normal"
             size="small"
             placeholder="e.g., How severe was it?"
           />
-        </Grid>
+        </Box>
+      </Box>
 
-        <Grid sx={{ gap: 12 }}>
-          <Typography variant="body2" gutterBottom>
-            Severity Levels:
-          </Typography>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 1 }}>
-            {severityLevels.map((level) => (
-              <Box
-                key={level.value}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                }}
-              >
-                <Box
-                  sx={{
-                    width: 16,
-                    height: 16,
-                    borderRadius: "50%",
-                    backgroundColor: level.color,
-                  }}
-                />
-                <Typography variant="body2">
-                  {level.value}: {level.label}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ mt: 1, display: "block" }}
-          >
-            Severity levels are predefined and cannot be changed.
-          </Typography>
-        </Grid>
-      </Grid>
+      <Box sx={{ px: 3, opacity: 0.6, mt: 3, width: "90%" }}>
+        {" "}
+        {/* Increased px from 1 to 3 for preview slider */}{" "}
+        <Typography
+          variant="caption"
+          display="block"
+          sx={{ textAlign: "center", color: "text.secondary", mb: 1 }}
+        >
+          Preview
+        </Typography>
+        <Slider
+          disabled
+          value={1}
+          min={1}
+          max={previewSeverityLevels.length}
+          step={1}
+          marks={previewMarks}
+          valueLabelDisplay="off"
+          sx={{
+            "& .MuiSlider-thumb": {
+              backgroundColor: "grey.500",
+            },
+            "& .MuiSlider-track": {
+              backgroundColor: "grey.500",
+            },
+            "& .MuiSlider-rail": {
+              backgroundColor: "grey.300",
+            },
+            "& .MuiSlider-markLabel": {
+              color: "text.disabled",
+            },
+            "& .MuiSlider-mark": {
+              backgroundColor: "grey.400",
+            },
+          }}
+        />
+      </Box>
     </Box>
   );
 };

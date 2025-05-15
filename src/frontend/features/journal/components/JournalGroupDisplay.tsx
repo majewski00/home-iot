@@ -9,18 +9,20 @@ import {
   Divider,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import { Group, JournalEntry } from "@src-types/journal/journal.types";
+import {
+  Group,
+  JournalEntry,
+  FieldValue,
+} from "@src-types/journal/journal.types";
 import JournalFieldInput from "./JournalFieldInput";
 
 interface JournalGroupDisplayProps {
   group: Group;
   entry: JournalEntry;
   onUpdateValue: (
-    fieldData: Omit<
-      import("@src-types/journal/journal.types").FieldValue,
-      "createdAt" | "updatedAt"
-    >
-  ) => Promise<import("@src-types/journal/journal.types").FieldValue | null>;
+    fieldData: Omit<FieldValue, "createdAt" | "updatedAt">
+  ) => Promise<FieldValue | null>;
+  selectedDate: string; // YYYY-MM-DD format
   disabled?: boolean;
 }
 
@@ -31,6 +33,7 @@ const JournalGroupDisplay: React.FC<JournalGroupDisplayProps> = ({
   group,
   entry,
   onUpdateValue,
+  selectedDate,
   disabled = false,
 }) => {
   const [expanded, setExpanded] = useState<boolean>(true);
@@ -41,32 +44,6 @@ const JournalGroupDisplay: React.FC<JournalGroupDisplayProps> = ({
   ) => {
     setExpanded(isExpanded);
   };
-
-  // Calculate completion percentage for this group
-  const calculateCompletionPercentage = () => {
-    const fieldsInGroup = group.fields.flatMap((field) =>
-      field.fieldTypes.map((fieldType) => ({
-        fieldId: field.id,
-        fieldTypeId: fieldType.id,
-      }))
-    );
-
-    if (fieldsInGroup.length === 0) return 0;
-
-    const filledFields = entry.values.filter(
-      (value) =>
-        value.groupId === group.id &&
-        value.filled &&
-        fieldsInGroup.some(
-          (f) =>
-            f.fieldId === value.fieldId && f.fieldTypeId === value.fieldTypeId
-        )
-    );
-
-    return Math.round((filledFields.length / fieldsInGroup.length) * 100);
-  };
-
-  const completionPercentage = calculateCompletionPercentage();
 
   return (
     <Accordion
@@ -118,21 +95,6 @@ const JournalGroupDisplay: React.FC<JournalGroupDisplayProps> = ({
               }}
             />
           </Box>
-
-          {/* Completion percentage */}
-          <Chip
-            label={`${completionPercentage}% Complete`}
-            color={
-              completionPercentage === 100
-                ? "success"
-                : completionPercentage > 0
-                ? "primary"
-                : "default"
-            }
-            size="small"
-            variant={completionPercentage > 0 ? "filled" : "outlined"}
-            sx={{ mr: 2 }}
-          />
         </Box>
       </AccordionSummary>
       <AccordionDetails
@@ -164,6 +126,7 @@ const JournalGroupDisplay: React.FC<JournalGroupDisplayProps> = ({
                   field={field}
                   values={fieldValues}
                   onUpdateValue={onUpdateValue}
+                  selectedDate={selectedDate}
                   disabled={disabled}
                 />
               );

@@ -20,6 +20,7 @@ export interface FieldTypeFactoryProps {
   onChange: (value: any) => void;
   mode: "view" | "edit";
   onFieldTypeUpdate?: (updates: Partial<FieldType>) => void; // Only needed in edit mode
+  selectedDate?: string; // YYYY-MM-DD format, optional as not all views need it
 }
 
 /**
@@ -32,6 +33,7 @@ const FieldTypeFactory: React.FC<FieldTypeFactoryProps> = ({
   onChange,
   mode,
   onFieldTypeUpdate,
+  selectedDate,
 }) => {
   // Don't render CHECK field type here - it's handled separately
   if (fieldType.kind === "CHECK") {
@@ -70,6 +72,7 @@ const FieldTypeFactory: React.FC<FieldTypeFactoryProps> = ({
           value={value}
           onChange={onChange}
           fieldType={fieldType}
+          selectedDate={selectedDate || new Date().toISOString().split("T")[0]}
         />
       ) : (
         <TimeSelectFieldEdit

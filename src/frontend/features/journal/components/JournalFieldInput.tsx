@@ -10,6 +10,7 @@ interface JournalFieldInputProps {
   onUpdateValue: (
     fieldData: Omit<FieldValue, "createdAt" | "updatedAt">
   ) => Promise<FieldValue | null>;
+  selectedDate: string; // YYYY-MM-DD format
   disabled?: boolean;
 }
 
@@ -21,6 +22,7 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
   field,
   values,
   onUpdateValue,
+  selectedDate,
   disabled = false,
 }) => {
   // Find the CHECK field type
@@ -28,48 +30,41 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
   const checkValue = checkFieldType
     ? values.find((v) => v.fieldTypeId === checkFieldType.id)
     : null;
+  // Check if Field is checked
+  const isChecked = Boolean(checkValue?.value) || false;
+  const [expanded, setExpanded] = useState<boolean>(isChecked);
 
   // Other field types
   const otherFieldTypes = field.fieldTypes.filter((ft) => ft.kind !== "CHECK");
 
-  // Check if any values are filled
-  const isFilled = checkValue?.filled || false;
-  const [expanded, setExpanded] = useState<boolean>(isFilled);
-
   // Handle toggle change
-  const handleToggleChange = async (newFilled: boolean) => {
-    setExpanded(newFilled);
+  const handleToggleChange = async (newIsChecked: boolean) => {
+    setExpanded(newIsChecked);
 
-    // Update all field types for this field
-    for (const fieldType of field.fieldTypes) {
-      const value = values.find((v) => v.fieldTypeId === fieldType.id);
-      if (value) {
-        await onUpdateValue({
-          groupId: field.groupId,
-          fieldId: field.id,
-          fieldTypeId: fieldType.id,
-          value: value.value,
-          filled: newFilled,
-        });
-      }
+    if (checkFieldType) {
+      await onUpdateValue({
+        groupId: field.groupId,
+        fieldId: field.id,
+        fieldTypeId: checkFieldType.id,
+        value: newIsChecked,
+      });
+    } else {
+      // TODO: how to handle this? Maybe propagate callback to set error?
+      console.error("Check field type or value not found");
     }
   };
 
   // Handle field type value change
   const handleFieldTypeValueChange = async (
     fieldType: FieldType,
-    newValue: string | number | null
+    newValue: string | boolean | number | null
   ) => {
-    const value = values.find((v) => v.fieldTypeId === fieldType.id);
-    if (value) {
-      await onUpdateValue({
-        groupId: field.groupId,
-        fieldId: field.id,
-        fieldTypeId: fieldType.id,
-        value: newValue,
-        filled: true, // If a value is set, mark as filled
-      });
-    }
+    await onUpdateValue({
+      groupId: field.groupId,
+      fieldId: field.id,
+      fieldTypeId: fieldType.id,
+      value: newValue,
+    });
   };
 
   return (
@@ -98,9 +93,9 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
         </Typography>
 
         {/* CHECK field type */}
-        {checkFieldType && checkValue && (
+        {checkFieldType && (
           <CheckFieldView
-            value={checkValue.filled}
+            value={!!checkValue?.value || false}
             onChange={handleToggleChange}
             disabled={disabled}
           />
@@ -110,18 +105,23 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
       <Collapse in={expanded} timeout="auto" unmountOnExit>
         <Box sx={{ mt: 2, pl: 1 }}>
           {otherFieldTypes.map((fieldType) => {
-            const value = values.find((v) => v.fieldTypeId === fieldType.id);
-            if (!value) return null;
+            const fieldValue = values.find(
+              (v) => v.fieldTypeId === fieldType.id
+            );
+            // FieldTypeFactory will now always be rendered based on the field's structure.
+            // If a specific fieldValue doesn't exist for a fieldType,
+            // null will be passed as the value prop to FieldTypeFactory.
 
             return (
               <FieldTypeFactory
                 key={fieldType.id}
                 fieldType={fieldType}
-                value={value.value}
+                value={fieldValue ? fieldValue.value : null}
                 onChange={(newValue) =>
                   handleFieldTypeValueChange(fieldType, newValue)
                 }
                 mode="view"
+                selectedDate={selectedDate}
               />
             );
           })}

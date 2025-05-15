@@ -171,6 +171,7 @@ const JournalPage: React.FC = () => {
         isLoading={isLoadingStructure}
         error={structureError}
         hasChanges={structureHasChanges}
+        onExitEditMode={() => setIsEditMode(false)}
       />
     );
   }
@@ -206,13 +207,14 @@ const JournalPage: React.FC = () => {
     );
   }
 
-  const calculateOverallCompletion = () => {
-    if (!entry) return 0;
-    const totalFields = entry.values.length;
-    if (totalFields === 0) return 0;
-    const filledFields = entry.values.filter((value) => value.filled).length;
-    return Math.round((filledFields / totalFields) * 100);
-  };
+  // TODO": remove anything related to completion percentage
+  // const calculateOverallCompletion = () => {
+  //   if (!entry) return 0;
+  //   const totalFields = entry.values.length;
+  //   if (totalFields === 0) return 0;
+  //   const filledFields = entry.values.filter((value) => value.filled).length;
+  //   return Math.round((filledFields / totalFields) * 100);
+  // };
 
   return (
     <Container maxWidth="md">
@@ -287,7 +289,7 @@ const JournalPage: React.FC = () => {
               p: 3,
               borderRadius: 2,
               bgcolor: theme.palette.background.default,
-              border: "1px solid",
+              border: "2px dotted",
               borderColor: "divider",
               borderWidth: "1px",
               boxShadow: "none",
@@ -306,6 +308,7 @@ const JournalPage: React.FC = () => {
                     group={group}
                     entry={entry}
                     onUpdateValue={updateValue}
+                    selectedDate={selectedDate}
                   />
                 ))
             )}

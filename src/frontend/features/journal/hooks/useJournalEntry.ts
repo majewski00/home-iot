@@ -64,38 +64,37 @@ export const useJournalEntry = (
     return true;
   }, [journal, date]);
 
-  // If no entry exists for the date, create a new, blank entry
-  const createJournalEntry = useCallback(async (): Promise<JournalEntry> => {
-    if (!journal?.groups) {
-      return {
-        date,
-        values: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    }
+  // // If no entry exists for the date, create a new, blank entry
+  // const createJournalEntry = useCallback(async (): Promise<JournalEntry> => {
+  //   if (!journal?.groups) {
+  //     return {
+  //       date,
+  //       values: [],
+  //       createdAt: new Date().toISOString(),
+  //       updatedAt: new Date().toISOString(),
+  //     };
+  //   }
 
-    const fieldValues: FieldValue[] = journal.groups.flatMap((group) =>
-      group.fields.flatMap((field) =>
-        field.fieldTypes.map((fieldType) => ({
-          groupId: group.id,
-          fieldId: field.id,
-          fieldTypeId: fieldType.id,
-          value: null,
-          filled: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }))
-      )
-    );
+  //   const fieldValues: FieldValue[] = journal.groups.flatMap((group) =>
+  //     group.fields.flatMap((field) =>
+  //       field.fieldTypes.map((fieldType) => ({
+  //         groupId: group.id,
+  //         fieldId: field.id,
+  //         fieldTypeId: fieldType.id,
+  //         value: null,
+  //         createdAt: new Date().toISOString(),
+  //         updatedAt: new Date().toISOString(),
+  //       }))
+  //     )
+  //   );
 
-    return {
-      date,
-      values: fieldValues,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-  }, [journal, date]);
+  //   return {
+  //     date,
+  //     values: fieldValues,
+  //     createdAt: new Date().toISOString(),
+  //     updatedAt: new Date().toISOString(),
+  //   };
+  // }, [journal, date]);
 
   // Fetch journal entry for the specified date
   const refreshEntry = useCallback(async () => {
@@ -110,29 +109,27 @@ export const useJournalEntry = (
       setEntry(entryData);
       setHasChanges(false);
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 404) {
-          // Entry not found, create a new one
-          try {
-            const newEntry = await createJournalEntry();
-            setEntry(newEntry);
-            setHasChanges(true); // Set to true since this is a new entry that needs to be saved
-          } catch (createErr) {
-            setError("Failed to create new journal entry");
-          }
-        } else {
-          setError(
-            `Failed to fetch journal entry: ${err.message || "Unknown error"}`
-          );
-        }
-      } else {
-        console.error("Unexpected error fetching journal entry:", err);
-        setError("Failed to fetch journal entry");
-      }
+      // if (err instanceof ApiError) {
+      //   if (err.status === 404) {
+      //     // Entry not found, create a new one
+      //     try {
+      //       const newEntry = await createJournalEntry();
+      //       setEntry(newEntry);
+      //       setHasChanges(true); // Set to true since this is a new entry that needs to be saved
+      //     } catch (createErr) {
+      //       setError("Failed to create new journal entry");
+      //     }
+      //   } else {
+      setError(`Failed to fetch journal entry`);
+      // }
+      // } else {
+      //   console.error("Unexpected error fetching journal entry:", err);
+      //   setError("Failed to fetch journal entry");
+      // }
     } finally {
       setIsLoading(false);
     }
-  }, [date, validate, createJournalEntry]);
+  }, [date, validate]); // , createJournalEntry
 
   // Only run when date changes or component mounts
   useEffect(() => {
@@ -140,7 +137,7 @@ export const useJournalEntry = (
     if (journal && !isEditMode) {
       refreshEntry();
     }
-  }, [date, journal, isEditMode, validate, createJournalEntry]);
+  }, [date, journal, isEditMode, validate]); // , createJournalEntry
 
   const saveEntry = async (): Promise<JournalEntry | null> => {
     if (!validate()) return null;
@@ -184,18 +181,43 @@ export const useJournalEntry = (
       setIsLoading(true);
       setError(null);
 
-      const updatedValues = entry.values.map((field) =>
-        field.groupId === fieldData.groupId &&
-        field.fieldId === fieldData.fieldId &&
-        field.fieldTypeId === fieldData.fieldTypeId
-          ? { ...field, ...fieldData, updatedAt: new Date().toISOString() }
-          : field
+      let updatedValues = [...entry.values];
+      const now = new Date().toISOString();
+
+      const fieldIndex = updatedValues.findIndex(
+        (field) =>
+          field.groupId === fieldData.groupId &&
+          field.fieldId === fieldData.fieldId &&
+          field.fieldTypeId === fieldData.fieldTypeId
       );
-      const updatedEntry = { ...entry, values: updatedValues };
+
+      if (fieldIndex !== -1) {
+        updatedValues[fieldIndex] = {
+          ...updatedValues[fieldIndex],
+          ...fieldData,
+          updatedAt: now,
+        };
+      } else {
+        const newField: FieldValue = {
+          ...fieldData,
+          createdAt: now,
+          updatedAt: now,
+        };
+        updatedValues.push(newField);
+      }
+
+      const updatedEntry = { ...entry, values: updatedValues, updatedAt: now };
       setEntry(updatedEntry);
       setHasChanges(true);
 
-      return null; // TODO: verify what is actually needed
+      // Return the updated or newly created field value
+      const resultField = updatedValues.find(
+        (field) =>
+          field.groupId === fieldData.groupId &&
+          field.fieldId === fieldData.fieldId &&
+          field.fieldTypeId === fieldData.fieldTypeId
+      );
+      return resultField || null;
     } catch (err) {
       setError("Failed to update field value");
       console.error("Error updating field value:", err);

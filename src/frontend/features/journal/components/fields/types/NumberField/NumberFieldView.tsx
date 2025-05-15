@@ -11,7 +11,8 @@ export interface NumberFieldViewProps {
 
 /**
  * NumberFieldView component
- * Renders a simple number input field
+ * Renders a simple number input field.
+ * Adapted from NumberNavigationFieldView, removing navigation buttons.
  */
 const NumberFieldView: React.FC<NumberFieldViewProps> = ({
   value,
@@ -21,7 +22,6 @@ const NumberFieldView: React.FC<NumberFieldViewProps> = ({
 }) => {
   const [localValue, setLocalValue] = useState<string>(value?.toString() || "");
 
-  // Get min/max values from dataOptions if available
   const minValue =
     fieldType.dataOptions?.min !== undefined
       ? Number(fieldType.dataOptions.min)
@@ -32,7 +32,6 @@ const NumberFieldView: React.FC<NumberFieldViewProps> = ({
       ? Number(fieldType.dataOptions.max)
       : undefined;
 
-  // Get unit label from dataOptions if available
   const unitLabel = fieldType.dataOptions?.unit as string | undefined;
 
   useEffect(() => {
@@ -43,7 +42,6 @@ const NumberFieldView: React.FC<NumberFieldViewProps> = ({
     const newValue = e.target.value;
     setLocalValue(newValue);
 
-    // Only update parent if it's a valid number
     if (newValue === "") {
       onChange(null);
     } else {
@@ -55,13 +53,11 @@ const NumberFieldView: React.FC<NumberFieldViewProps> = ({
   };
 
   const handleBlur = () => {
-    // Clean up the input on blur
     if (localValue === "") {
       onChange(null);
     } else {
       const numValue = Number(localValue);
       if (!isNaN(numValue)) {
-        // Ensure value is within min/max range if defined
         let boundedValue = numValue;
         if (minValue !== undefined) {
           boundedValue = Math.max(minValue, boundedValue);
@@ -69,24 +65,30 @@ const NumberFieldView: React.FC<NumberFieldViewProps> = ({
         if (maxValue !== undefined) {
           boundedValue = Math.min(maxValue, boundedValue);
         }
-
         setLocalValue(boundedValue.toString());
         onChange(boundedValue);
       } else {
-        // Reset to previous valid value
         setLocalValue(value?.toString() || "");
       }
     }
   };
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", mb: 2 }}>
+    <Box sx={{ display: "flex", alignItems: "center", mb: 2, gap: 1 }}>
       {fieldType.description && (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+        <Typography variant="body1" color="text.primary" sx={{ flexShrink: 0 }}>
           {fieldType.description}
         </Typography>
       )}
-      <Box sx={{ display: "flex", alignItems: "center" }}>
+      <Box
+        sx={{
+          ml: 2,
+          display: "flex",
+          alignItems: "center",
+          flexGrow: 1,
+          justifyContent: "center",
+        }}
+      >
         <TextField
           value={localValue}
           onChange={handleChange}
@@ -98,20 +100,41 @@ const NumberFieldView: React.FC<NumberFieldViewProps> = ({
           inputProps={{
             min: minValue,
             max: maxValue,
+            style: { textAlign: "center" },
+            step: "any",
           }}
           sx={{
-            width: "120px",
+            mx: 1,
+            width: "80px",
             "& .MuiOutlinedInput-root": {
               borderRadius: 1,
             },
+            "& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button":
+              {
+                display: "none",
+                "-webkit-appearance": "none",
+                margin: 0,
+              },
+            "& input[type=number]": {
+              "-moz-appearance": "textfield",
+            },
           }}
         />
-
-        {unitLabel && (
-          <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-            {unitLabel}
-          </Typography>
-        )}
+        <Box sx={{ width: "100px", textAlign: "left", flexShrink: 0 }}>
+          {unitLabel && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                ml: 1,
+                minWidth: "30px",
+                textAlign: "left",
+              }}
+            >
+              {unitLabel}
+            </Typography>
+          )}
+        </Box>
       </Box>
     </Box>
   );

@@ -23,8 +23,8 @@ const DateNavigator: React.FC<DateNavigatorProps> = ({
 
   // Check if selected date is today
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
   const todayStr = today.toISOString().split("T")[0];
+  today.setHours(0, 0, 0, 0);
   const isToday = selectedDate === todayStr;
 
   // Format the date for display
@@ -48,10 +48,11 @@ const DateNavigator: React.FC<DateNavigatorProps> = ({
   const handleNextDay = () => {
     const date = new Date(selectedDate);
     date.setDate(date.getDate() + 1);
+    const nextDateStr = date.toISOString().split("T")[0];
 
     // Don't allow navigating to future dates
-    if (date <= today) {
-      onDateChange(date.toISOString().split("T")[0]);
+    if (nextDateStr <= todayStr) {
+      onDateChange(nextDateStr);
     }
   };
 

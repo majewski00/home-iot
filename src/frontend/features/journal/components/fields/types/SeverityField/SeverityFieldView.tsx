@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Box, Slider, Typography } from "@mui/material";
 import { FieldType } from "@src-types/journal/journal.types";
 
 export interface SeverityFieldViewProps {
-  value: number | null;
+  value: number | null; // Represents the actual value (1 for Low, 2 for Moderate, etc.)
   onChange: (value: number | null) => void;
   fieldType: FieldType;
   disabled?: boolean;
@@ -12,102 +12,154 @@ export interface SeverityFieldViewProps {
 /**
  * SeverityFieldView component
  * Renders a slider for selecting severity levels (Low, Moderate, High, Very High)
+ * Defaults to "Low" visually but is "unset" (--) until user interaction if initial value is null.
  */
 const SeverityFieldView: React.FC<SeverityFieldViewProps> = ({
-  value,
+  value: propValue,
   onChange,
   fieldType,
   disabled = false,
 }) => {
-  // Default severity levels
-  const severityLevels = [
-    { value: 0, label: "None", color: "#9e9e9e" },
-    { value: 1, label: "Low", color: "#4caf50" },
-    { value: 2, label: "Moderate", color: "#ff9800" },
-    { value: 3, label: "High", color: "#f44336" },
-    { value: 4, label: "Very High", color: "#9c27b0" },
-  ];
-
-  // Local state for slider value
-  const [localValue, setLocalValue] = useState<number>(
-    value !== null ? value : 0
+  const severityLevels = useMemo(
+    () => [
+      { value: 1, label: "Low" },
+      { value: 2, label: "Moderate" },
+      { value: 3, label: "High" },
+      { value: 4, label: "Very High" },
+    ],
+    []
   );
 
-  // Update local value when prop value changes
-  useEffect(() => {
-    setLocalValue(value !== null ? value : 0);
-  }, [value]);
+  const defaultSliderPosition = useMemo(
+    () => severityLevels[0].value,
+    [severityLevels]
+  ); // Default to "Low"
 
-  // Handle slider change
+  // currentCommittedValue holds the value that has been or would be sent via onChange.
+  const [currentCommittedValue, setCurrentCommittedValue] = useState<
+    number | null
+  >(propValue);
+
+  // userHasInteracted tracks if the slider has been touched.
+  const [userHasInteracted, setUserHasInteracted] = useState<boolean>(
+    propValue !== null
+  );
+
+  useEffect(() => {
+    setCurrentCommittedValue(propValue);
+    setUserHasInteracted(propValue !== null);
+  }, [propValue]);
+
+  // isEffectivelyUnset determines the visual "unset" state.
+  const isEffectivelyUnset = useMemo(() => {
+    return propValue === null && !userHasInteracted;
+  }, [propValue, userHasInteracted]);
+
+  // sliderVisualValue is what the slider thumb is actually set to.
+  const sliderVisualValue = useMemo(() => {
+    if (isEffectivelyUnset) {
+      return defaultSliderPosition; // Visually at "Low" but logically "--"
+    }
+    return currentCommittedValue ?? defaultSliderPosition;
+  }, [isEffectivelyUnset, currentCommittedValue, defaultSliderPosition]);
+
+  // displayLabelText is the text shown below the slider.
+  const displayLabelText = useMemo(() => {
+    if (isEffectivelyUnset) {
+      return "--";
+    }
+    const level = severityLevels.find(
+      (l) => l.value === (currentCommittedValue ?? defaultSliderPosition)
+    );
+    return level ? level.label : "--";
+  }, [
+    isEffectivelyUnset,
+    currentCommittedValue,
+    severityLevels,
+    defaultSliderPosition,
+  ]);
+
   const handleChange = (_event: Event, newValue: number | number[]) => {
     const numValue = newValue as number;
-    setLocalValue(numValue);
-    onChange(numValue);
+    if (!userHasInteracted) {
+      setUserHasInteracted(true);
+    }
+    // Update currentCommittedValue so the label below slider updates live during drag.
+    setCurrentCommittedValue(numValue);
   };
 
-  // Get current severity level
-  const currentSeverity = severityLevels[localValue] || severityLevels[0];
+  const handleChangeCommitted = (
+    _event: React.SyntheticEvent | Event,
+    newValue: number | number[]
+  ) => {
+    const numValue = newValue as number;
+    if (!userHasInteracted) {
+      setUserHasInteracted(true);
+    }
+    setCurrentCommittedValue(numValue); // Ensure it's set.
+    onChange(numValue); // Report the actual selected value
+  };
 
-  // Custom marks for the slider
-  const marks = severityLevels.map((level) => ({
-    value: level.value,
-    label: level.label,
-  }));
+  const marks = useMemo(
+    () =>
+      severityLevels.map((level) => ({
+        value: level.value,
+        label: level.label,
+      })),
+    [severityLevels]
+  );
 
   return (
     <Box
       sx={{ display: "flex", flexDirection: "column", mb: 2, width: "100%" }}
     >
       {fieldType.description && (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-          {fieldType.description}
-        </Typography>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            mb: 0.5, // Consistent with TimeSelectFieldView
+          }}
+        >
+          <Typography variant="body2" color="text.secondary">
+            {fieldType.description}
+          </Typography>
+          <Typography
+            variant="body1" // Or body2 if preferred, TimeSelect uses body1 for value
+            color={isEffectivelyUnset ? "text.disabled" : "text.primary"}
+            sx={{ fontWeight: "medium" }} // Consistent with original label style
+          >
+            {displayLabelText}
+          </Typography>
+        </Box>
       )}
 
-      <Box sx={{ px: 1, py: 2, width: "100%" }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          px: 1,
+          py: 1, // Added py for vertical padding around slider
+          width: "90%",
+        }}
+      >
         <Slider
-          value={localValue}
+          value={sliderVisualValue}
           onChange={handleChange}
-          min={0}
-          max={severityLevels.length - 1}
+          onChangeCommitted={handleChangeCommitted}
+          min={severityLevels[0].value}
+          max={severityLevels[severityLevels.length - 1].value}
           step={1}
           marks={marks}
           disabled={disabled}
           sx={{
+            flexGrow: 1, // Slider takes available space in its 90% parent
             "& .MuiSlider-thumb": {
-              backgroundColor: currentSeverity.color,
-            },
-            "& .MuiSlider-track": {
-              backgroundColor: currentSeverity.color,
-            },
-            "& .MuiSlider-rail": {
-              opacity: 0.5,
-              backgroundColor: "#bfbfbf",
-            },
-            "& .MuiSlider-mark": {
-              backgroundColor: "#bfbfbf",
-              height: 8,
-              width: 1,
-              marginTop: -3,
-            },
-            "& .MuiSlider-markActive": {
-              opacity: 1,
-              backgroundColor: "currentColor",
+              backgroundColor: isEffectivelyUnset ? "grey.500" : "primary.main",
             },
           }}
         />
-
-        <Typography
-          variant="body1"
-          align="center"
-          sx={{
-            mt: 1,
-            fontWeight: "medium",
-            color: currentSeverity.color,
-          }}
-        >
-          {currentSeverity.label}
-        </Typography>
       </Box>
     </Box>
   );
