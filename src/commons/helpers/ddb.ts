@@ -4,6 +4,7 @@ import {
   PutCommand,
   QueryCommand,
   UpdateCommand,
+  DeleteCommand,
   QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
 
@@ -91,4 +92,22 @@ export async function updateItem<T extends BaseItem>(
     })
   );
   return Attributes as T;
+}
+
+/**
+ * Delete an item from DynamoDB
+ * @param table The table name
+ * @param key The key of the item to delete
+ * @returns Promise that resolves when the item is deleted
+ */
+export async function deleteItem(
+  table: string,
+  key: { PK: string; SK: string }
+): Promise<void> {
+  await docClient.send(
+    new DeleteCommand({
+      TableName: table,
+      Key: key,
+    })
+  );
 }

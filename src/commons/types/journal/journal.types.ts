@@ -74,3 +74,21 @@ export interface JournalStats {
   totalEntries: number;
   completionRate: number; // Percentage of fields filled
 }
+
+// Actions
+
+export interface ActionOption {
+  id: string;
+  fieldTypeId: string;
+  increment?: number; // Increment value for the operation
+  isCustom?: boolean; // Indicates if the operation is custom
+}
+export interface Action {
+  id: string;
+  name: string;
+  description: string;
+  fieldId: string;
+  options?: ActionOption[]; // there is option to ignore any field - the Action will just switch Field to Done (CHECK)
+  createdAt: Date | string;
+  order?: number; // Added to support ordering of actions
+}

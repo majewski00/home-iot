@@ -12,16 +12,14 @@ import {
   Fade,
   useTheme,
 } from "@mui/material";
-import {
-  Edit as EditIcon,
-  Save as SaveIcon,
-  LocalFireDepartment as StreakIcon,
-} from "@mui/icons-material";
+import { Edit as EditIcon, Save as SaveIcon } from "@mui/icons-material";
 import { useJournalStructure } from "../hooks/useJournalStructure";
 import { useJournalEntry } from "../hooks/useJournalEntry";
 import DateNavigator from "./DateNavigator";
 import JournalGroupDisplay from "./JournalGroupDisplay";
 import EditPageContent from "./EditPage";
+import ActionGrid from "./actions/ActionGrid";
+import AllActionsPage from "./actions/AllActionsPage";
 
 /**
  * Main Journal Page component
@@ -38,6 +36,10 @@ const JournalPage: React.FC = () => {
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [saveError, setSaveError] = useState<boolean>(false);
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
+
+  // Check if we're in the all actions view
+  const searchParams = new URLSearchParams(location.search);
+  const isAllActionsView = searchParams.get("view") === "all-actions";
 
   const {
     structure,
@@ -176,6 +178,18 @@ const JournalPage: React.FC = () => {
     );
   }
 
+  // Render the All Actions page if in that view
+  if (isAllActionsView) {
+    return (
+      <AllActionsPage
+        date={selectedDate}
+        structure={structure}
+        entry={entry}
+        refreshEntry={refreshEntry}
+      />
+    );
+  }
+
   if (isLoadingEntry) {
     return (
       <Box
@@ -207,15 +221,6 @@ const JournalPage: React.FC = () => {
     );
   }
 
-  // TODO": remove anything related to completion percentage
-  // const calculateOverallCompletion = () => {
-  //   if (!entry) return 0;
-  //   const totalFields = entry.values.length;
-  //   if (totalFields === 0) return 0;
-  //   const filledFields = entry.values.filter((value) => value.filled).length;
-  //   return Math.round((filledFields / totalFields) * 100);
-  // };
-
   return (
     <Container maxWidth="md">
       <Box py={4}>
@@ -223,26 +228,13 @@ const JournalPage: React.FC = () => {
           display="flex"
           justifyContent="space-between"
           alignItems="center"
-          mb={4}
+          mb={2}
         >
           <Typography variant="h4" component="h1">
             Journal
           </Typography>
 
           <Box display="flex" alignItems="center" gap={2}>
-            {/* Placeholder for streak - would come from backend */}
-            <Chip
-              icon={<StreakIcon />}
-              label="7 Day Streak"
-              color="primary"
-              variant="outlined"
-              sx={{
-                borderRadius: 2,
-                "& .MuiChip-icon": { color: theme.palette.warning.main },
-              }}
-            />
-
-            {/* Edit button - navigate to edit page */}
             <Button
               variant="outlined"
               startIcon={<EditIcon />}
@@ -259,12 +251,11 @@ const JournalPage: React.FC = () => {
           selectedDate={selectedDate}
           onDateChange={handleDateChange}
         />
-
-        {/* Save notification */}
-        <Fade in={saveSuccess}>
+        {/* // TODO: The error creates the unnecessary space -  create a context for error's tosters*/}
+        {/* <Fade in={saveSuccess}>
           <Alert
             severity="success"
-            sx={{ mb: 3 }}
+            sx={{ mt: 2, mb: 2 }}
             onClose={() => setSaveSuccess(false)}
           >
             Journal entry saved successfully!
@@ -274,19 +265,28 @@ const JournalPage: React.FC = () => {
         <Fade in={saveError}>
           <Alert
             severity="error"
-            sx={{ mb: 3 }}
+            sx={{ mt: 2, mb: 2 }}
             onClose={() => setSaveError(false)}
           >
             Failed to save journal entry. Please try again.
           </Alert>
-        </Fade>
+        </Fade> */}
 
-        {/* Journal content */}
+        {entry && !isEditMode && (
+          <ActionGrid
+            date={selectedDate}
+            structure={structure}
+            entry={entry}
+            refreshEntry={refreshEntry}
+          />
+        )}
+
         {entry && (
           <Paper
             elevation={0}
             sx={{
               p: 3,
+              mt: 4,
               borderRadius: 2,
               bgcolor: theme.palette.background.default,
               border: "2px dotted",

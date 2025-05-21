@@ -23,3 +23,29 @@ export interface JournalSaveEntryBody {
 export interface JournalSaveStructureBody {
   groups: Group[];
 }
+
+// Action API types
+export interface JournalAddActionBody {
+  name: string;
+  description: string;
+  fieldId: string;
+  options?: {
+    fieldTypeId: string;
+    increment?: number;
+    isCustom?: boolean;
+  }[];
+}
+
+export interface JournalRemoveActionBody {
+  id: string;
+}
+
+export interface JournalRegisterActionBody {
+  id: string;
+  value?: number; // Optional value for custom input
+}
+
+export interface JournalReorderActionBody {
+  id: string;
+  order: number;
+}

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.1.1 - 2025-05-21
+
+### Added
+
+- CreateActionModal component for creating new actions in the journal
+- implement NumberInputModal for custom number input handling
+- create SelectFieldModal for selecting fields associated with actions
+- add useJournalActions hook for managing journal actions and fetching eligible fields
+- implement journalApi service methods for action management (fetch, add, remove, register, reorder)
+- enhance error logging in API response handler
+
 ## 0.1.0 - 2025-05-15
 
 ### Added
