@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.1.2 - 2025-05-23
+
+### Fix
+
+- Backend configuration to work when deployed to AWS Lambda
+
+### Added
+
+- Generalized logger in the backend
+
 ## 0.1.1 - 2025-05-21
 
 ### Added

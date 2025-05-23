@@ -22,6 +22,7 @@ import {
   JournalRegisterActionBody,
   JournalReorderActionBody,
 } from "@src-types/journal/api.types";
+import logger from "../utils/logger";
 
 export default (router: Router) => {
   // * Fetch all actions for a user
@@ -31,15 +32,27 @@ export default (router: Router) => {
       _req: Request<{}, Action[], {}, {}>,
       res: Response<Action[] | ErrorResponse, Locals>
     ) => {
+      const routeLogger = logger.withContext({
+        route: ROUTES.JOURNAL_FETCH_ACTIONS,
+        userId: res.locals.user.sub,
+      });
+
+      routeLogger.info("Fetching all actions for user");
+
       try {
+        routeLogger.debug("Querying DynamoDB for actions");
         const actions = await queryItems<Action & BaseItem>(
           process.env.DYNAMODB_TABLE_NAME!,
           `USER#${res.locals.user.sub}#ACTIONS`,
           "ACTION#"
         );
 
+        routeLogger.info("Successfully fetched actions", {
+          count: actions.length,
+        });
         res.status(200).send(actions.map((action) => stripBaseItem(action)));
       } catch (error) {
+        routeLogger.error("Failed to fetch actions", { error });
         res.status(500).send({
           message: "Failed to fetch actions.",
           error: error as string,
@@ -55,7 +68,14 @@ export default (router: Router) => {
       req: Request<{}, Action, JournalAddActionBody, {}, {}>,
       res: Response<Action | ErrorResponse, Locals>
     ) => {
+      const routeLogger = logger.withContext({
+        route: ROUTES.JOURNAL_ADD_ACTION,
+        userId: res.locals.user.sub,
+      });
+
       const { name, description, fieldId, options } = req.body;
+      routeLogger.info("Adding new action", { name, fieldId });
+
       const newDate = new Date().toISOString();
       const id = uuidv4();
 
@@ -78,9 +98,17 @@ export default (router: Router) => {
           createdAt: newDate,
         };
 
+        routeLogger.debug("Creating action in DynamoDB", {
+          actionId: id,
+          optionsCount: options?.length || 0,
+        });
+
         await putItem(process.env.DYNAMODB_TABLE_NAME!, newAction);
+
+        routeLogger.info("Action created successfully", { actionId: id });
         res.status(201).send(stripBaseItem(newAction));
       } catch (error) {
+        routeLogger.error("Failed to add action", { error });
         res.status(500).send({
           message: "Failed to add action.",
           error: error as string,
@@ -97,16 +125,26 @@ export default (router: Router) => {
       res: Response<{ success: boolean } | ErrorResponse, Locals>
     ) => {
       const { id } = req.body;
+      const routeLogger = logger.withContext({
+        route: ROUTES.JOURNAL_REMOVE_ACTION,
+        userId: res.locals.user.sub,
+        actionId: id,
+      });
+
+      routeLogger.info("Removing action");
 
       try {
+        routeLogger.debug("Deleting action from DynamoDB");
         // Use the deleteItem function to remove the action
         await deleteItem(process.env.DYNAMODB_TABLE_NAME!, {
           PK: `USER#${res.locals.user.sub}#ACTIONS`,
           SK: `ACTION#${id}`,
         });
 
+        routeLogger.info("Action removed successfully");
         res.status(200).send({ success: true });
       } catch (error) {
+        routeLogger.error("Failed to remove action", { error });
         res.status(500).send({
           message: "Failed to remove action.",
           error: error as string,
@@ -123,12 +161,21 @@ export default (router: Router) => {
       res: Response<{ success: boolean } | ErrorResponse, Locals>
     ) => {
       const { id, value } = req.body;
+      const routeLogger = logger.withContext({
+        route: ROUTES.JOURNAL_REGISTER_ACTION,
+        userId: res.locals.user.sub,
+        actionId: id,
+      });
+
+      routeLogger.info("Registering action", { actionId: id, value });
+
       const today = new Date();
       const dateString = today.toISOString().split("T")[0]; // Format: YYYY-MM-DD
       const newDate = today.toISOString();
 
       try {
         // 1. Get the action details
+        routeLogger.debug("Fetching action details");
         const actions = await queryItems<Action & BaseItem>(
           process.env.DYNAMODB_TABLE_NAME!,
           `USER#${res.locals.user.sub}#ACTIONS`,
@@ -136,37 +183,56 @@ export default (router: Router) => {
         );
         const action = actions.length > 0 ? stripBaseItem(actions[0]) : null;
         if (!action) {
+          routeLogger.warn("Action not found", { actionId: id });
           res.status(404).send({ message: "Action not found." });
           return;
         }
 
         // 2. Get today's journal entry
+        routeLogger.debug("Getting or creating journal entry", {
+          date: dateString,
+        });
         let journalEntry = await getOrCreateJournalEntry(
           res.locals.user.sub,
           dateString,
           newDate
         );
+        routeLogger.debug("Journal entry retrieved", {
+          isNew: journalEntry.isNewEntry,
+          valuesCount: journalEntry.values.length,
+        });
 
         // 3. Get journal structure to find field information
+        routeLogger.debug("Fetching journal structure");
         const journalStructure = await getJournalStructure(res.locals.user.sub);
         if (!journalStructure) {
+          routeLogger.warn("Journal structure not found");
           res.status(404).send({ message: "Journal structure not found." });
           return;
         }
 
         // 4. Find the field and its group in the structure
+        routeLogger.debug("Finding field in structure", {
+          fieldId: action.fieldId,
+        });
         const { field, groupId } = findFieldInStructure(
           journalStructure,
           action.fieldId
         );
 
         if (!field) {
+          routeLogger.warn("Field not found in structure", {
+            fieldId: action.fieldId,
+          });
           res.status(404).send({ message: "Field not found in structure." });
           return;
         }
 
         // 5. Update field values based on action options
         if (action.options && action.options.length > 0) {
+          routeLogger.debug("Processing action with options", {
+            optionsCount: action.options.length,
+          });
           await processActionWithOptions(
             journalEntry,
             action,
@@ -176,6 +242,7 @@ export default (router: Router) => {
             newDate
           );
         } else {
+          routeLogger.debug("Processing action without options");
           // If no options, just mark the CHECK field as done
           await processActionWithoutOptions(
             journalEntry,
@@ -187,6 +254,7 @@ export default (router: Router) => {
         }
 
         // 6. Check for TIME_SELECT field type and create/update its value
+        routeLogger.debug("Processing time select field");
         await processTimeSelectField(
           journalEntry,
           field,
@@ -196,10 +264,16 @@ export default (router: Router) => {
         );
 
         // 7. Save the updated journal entry
+        routeLogger.debug("Saving journal entry", {
+          date: dateString,
+          valuesCount: journalEntry.values.length,
+        });
         await saveJournalEntry(res.locals.user.sub, dateString, journalEntry);
 
+        routeLogger.info("Action registered successfully");
         res.status(200).send({ success: true });
       } catch (error) {
+        routeLogger.error("Failed to register action", { error });
         res.status(500).send({
           message: "Failed to register action.",
           error: error as string,
@@ -216,8 +290,16 @@ export default (router: Router) => {
       res: Response<{ success: boolean } | ErrorResponse, Locals>
     ) => {
       const { id, order } = req.body;
+      const routeLogger = logger.withContext({
+        route: ROUTES.JOURNAL_REORDER_ACTION,
+        userId: res.locals.user.sub,
+        actionId: id,
+      });
+
+      routeLogger.info("Reordering action", { actionId: id, newOrder: order });
 
       try {
+        routeLogger.debug("Updating action order in DynamoDB");
         // Update the action with the new order
         await updateItem(
           process.env.DYNAMODB_TABLE_NAME!,
@@ -231,8 +313,10 @@ export default (router: Router) => {
           }
         );
 
+        routeLogger.info("Action reordered successfully");
         res.status(200).send({ success: true });
       } catch (error) {
+        routeLogger.error("Failed to reorder action", { error });
         res.status(500).send({
           message: "Failed to reorder action.",
           error: error as string,
@@ -250,6 +334,13 @@ export default (router: Router) => {
     dateString: string,
     timestamp: string
   ): Promise<JournalEntry & { isNewEntry?: boolean }> {
+    const functionLogger = logger.withContext({
+      function: "getOrCreateJournalEntry",
+      userId,
+      date: dateString,
+    });
+
+    functionLogger.debug("Fetching journal entry");
     const entries = await queryItems<JournalEntry & BaseItem>(
       process.env.DYNAMODB_TABLE_NAME!,
       `USER#${userId}#ENTRIES`,
@@ -257,10 +348,12 @@ export default (router: Router) => {
     );
 
     if (entries.length > 0) {
+      functionLogger.debug("Existing entry found");
       return { ...stripBaseItem(entries[0]), isNewEntry: false };
     }
 
     // Create new entry
+    functionLogger.debug("No entry found, creating new entry");
     return {
       date: dateString,
       values: [],
@@ -276,12 +369,26 @@ export default (router: Router) => {
   async function getJournalStructure(
     userId: string
   ): Promise<{ groups: any[] } | null> {
+    const functionLogger = logger.withContext({
+      function: "getJournalStructure",
+      userId,
+    });
+
+    functionLogger.debug("Fetching journal structure");
     const structures = await queryItems<{ groups: any[] } & BaseItem>(
       process.env.DYNAMODB_TABLE_NAME!,
       `USER#${userId}#STRUCTURE`,
       "STRUCTURE#"
     );
 
+    if (structures.length === 0) {
+      functionLogger.debug("No structure found");
+      return null;
+    }
+
+    functionLogger.debug("Structure found", {
+      groupsCount: structures[0].groups.length,
+    });
     return structures.length > 0 ? structures[0] : null;
   }
 
@@ -486,9 +593,16 @@ export default (router: Router) => {
     dateString: string,
     journalEntry: JournalEntry & { isNewEntry?: boolean }
   ) {
+    const functionLogger = logger.withContext({
+      function: "saveJournalEntry",
+      userId,
+      date: dateString,
+    });
+
     const { isNewEntry, ...entryToSave } = journalEntry;
 
     if (isNewEntry) {
+      functionLogger.debug("Creating new journal entry");
       await putItem(process.env.DYNAMODB_TABLE_NAME!, {
         PK: `USER#${userId}#ENTRIES`,
         SK: `DATE#${dateString}`,
@@ -496,6 +610,7 @@ export default (router: Router) => {
         ...entryToSave,
       });
     } else {
+      functionLogger.debug("Updating existing journal entry");
       await updateItem<JournalEntry & BaseItem>(
         process.env.DYNAMODB_TABLE_NAME!,
         {
@@ -508,5 +623,6 @@ export default (router: Router) => {
         }
       );
     }
+    functionLogger.debug("Journal entry saved successfully");
   }
 };

@@ -22,6 +22,14 @@ provider:
     Version: ${env:APP_VERSION}
     'Managed By': 'Serverless'
   timeout: 28
+  logs:
+    # Enable CloudWatch logs
+    restApi:
+      accessLogging: true
+      executionLogging: true
+      level: INFO
+      # Optional: Configure log retention in days
+      # logRetentionInDays: 14
   iam:
     role:
       name: ${self:custom.name}

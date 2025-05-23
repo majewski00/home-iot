@@ -48,12 +48,12 @@ router.use((req: Request, res: Response, next: NextFunction): void => {
   });
 });
 
-router.use((req: Request, _res: Response, next: NextFunction): void => {
-  if (req.body) {
-    console.log("Request Body:", req.body);
-  }
-  next();
-});
+// router.use((req: Request, _res: Response, next: NextFunction): void => {
+//   if (req.body) {
+//     console.log("Request Body:", req.body);
+//   }
+//   next();
+// });
 
 journalRoutes(router);
 

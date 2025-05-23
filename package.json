@@ -1,6 +1,6 @@
 {
   "name": "home-iot",
-  "version": "0.0.1",
+  "version": "0.1.2",
   "description": "AWS based public website to manage self-developed IoT devices",
   "type": "module",
   "scripts": {
@@ -8,7 +8,9 @@
     "local:backend": "cd src/backend/api && sls offline -t",
     "local:frontend": "source ./scripts/frontend-vars.sh && vite --config ./src/frontend/vite.config.ts",
     "deploy": "npm-run-all -p 'deploy:*'",
-    "deploy:infra": "source ./scripts/infra-deploy.sh"
+    "deploy:infra": "source ./scripts/infra-deploy.sh",
+    "deploy:frontend": "source ./scripts/frontend-deploy.sh",
+    "deploy:backend": "source ./scripts/backend-deploy.sh"
   },
   "repository": {
     "type": "git",
@@ -32,7 +34,8 @@
     "http-status-codes": "^2.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.5.3"
+    "react-router-dom": "^7.5.3",
+    "winston": "^3.17.0"
   },
   "devDependencies": {
     "@aws-sdk/client-dynamodb": "^3.799.0",

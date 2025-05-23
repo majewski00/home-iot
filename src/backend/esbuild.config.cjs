@@ -1,10 +1,7 @@
 module.exports = (serverless) => ({
-  format: "esm",
+  format: "cjs",
   platform: "node",
   target: "esnext",
-  banner: {
-    js: "import { createRequire } from 'module';const require = createRequire(import.meta.url);",
-  },
 
   bundle: true,
   sourcemap: "external",

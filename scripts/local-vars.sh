@@ -7,4 +7,3 @@ export SES_IDENTITY_ARN
 export DOMAIN_NAME
 
 export APP_VERSION=$(jq -r '.version' ./package.json)
-export test=1
