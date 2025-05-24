@@ -8,6 +8,10 @@ interface CognitoStackProps extends cdk.StackProps {
   service: string;
   buildStage: string;
   awsRegion: string;
+  frontend: {
+    distributionDomainName: string;
+    customDomainName?: string;
+  };
   sesIdentityArn?: string;
 }
 
@@ -18,9 +22,19 @@ export class CognitoStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: CognitoStackProps) {
     super(scope, id, props);
 
-    const { service, buildStage, awsRegion, sesIdentityArn } = props;
+    const { service, buildStage, awsRegion, frontend, sesIdentityArn } = props;
 
-    const clientUrls: string[] = ["http://localhost:4000"]; // TODO: Frontend URL
+    const clientUrls: string[] = ["http://localhost:4000"];
+    const domainName = frontend.customDomainName;
+
+    if (domainName) {
+      clientUrls.push(`https://${domainName}`);
+      if (buildStage === "prod") {
+        clientUrls.push(`https://www.${domainName}`);
+      }
+    } else {
+      clientUrls.push(`https://${frontend.distributionDomainName}`);
+    }
 
     let userPoolEmail: cognito.UserPoolEmail;
     if (sesIdentityArn) {
@@ -29,7 +43,6 @@ export class CognitoStack extends cdk.Stack {
         `${service}-emailIdentity`,
         sesIdentityArn
       );
-
       userPoolEmail = cognito.UserPoolEmail.withSES({
         fromEmail: emailIdentity.emailIdentityName,
         fromName: "Home-IoT",
@@ -86,7 +99,7 @@ export class CognitoStack extends cdk.Stack {
           cognito.OAuthScope.PROFILE,
         ],
       },
-      generateSecret: false,
+      generateSecret: false, // Don't generate a client secret (needed for public web apps)
       preventUserExistenceErrors: true,
       supportedIdentityProviders,
     });
@@ -113,6 +126,27 @@ export class CognitoStack extends cdk.Stack {
     new ssm.StringParameter(this, `${service}-CognitoDomainParameter`, {
       parameterName: `/${service}/${buildStage}/${awsRegion}/cognito_domain`,
       stringValue: `${userPoolDomain.domainName}.auth.${awsRegion}.amazoncognito.com`,
+    });
+
+    // Outputs
+    new cdk.CfnOutput(this, "UserPoolId", {
+      value: userPool.userPoolId,
+      description: "Cognito User Pool ID",
+    });
+
+    new cdk.CfnOutput(this, "UserPoolClientId", {
+      value: userPoolClient.userPoolClientId,
+      description: "Cognito User Pool Client ID",
+    });
+
+    new cdk.CfnOutput(this, "CognitoDomain", {
+      value: `${userPoolDomain.domainName}.auth.${awsRegion}.amazoncognito.com`,
+      description: "Cognito hosted UI domain",
+    });
+
+    new cdk.CfnOutput(this, "AllowedRedirectUrls", {
+      value: clientUrls.join(", "),
+      description: "Allowed redirect URLs for this environment",
     });
   }
 }

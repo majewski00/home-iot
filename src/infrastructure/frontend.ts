@@ -1,6 +1,9 @@
 import * as cdk from "aws-cdk-lib";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import { Certificate } from "aws-cdk-lib/aws-certificatemanager";
+import * as route53 from "aws-cdk-lib/aws-route53";
+import * as targets from "aws-cdk-lib/aws-route53-targets";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as ssm from "aws-cdk-lib/aws-ssm";
@@ -10,17 +13,27 @@ interface FrontendStackProps extends cdk.StackProps {
   service: string;
   buildStage: string;
   awsRegion: string;
-  domainNames?: string[];
-  certificateArn?: string;
+  certificateStack?: {
+    certificate: Certificate;
+    hostedZone: route53.IHostedZone;
+    fullDomainName: string;
+  };
 }
 
 export class FrontEndStack extends cdk.Stack {
   distributionDomainName: string;
+  customDomainName?: string;
 
   constructor(scope: Construct, id: string, props: FrontendStackProps) {
     super(scope, id, props);
 
-    const { service, buildStage, awsRegion } = props;
+    const { service, buildStage, awsRegion, certificateStack } = props;
+
+    const domainName = certificateStack?.fullDomainName;
+    const certificate = certificateStack?.certificate;
+    const hostedZone = certificateStack?.hostedZone;
+
+    this.customDomainName = domainName;
 
     const originAccessIdentity = new cloudfront.OriginAccessIdentity(
       this,
@@ -64,6 +77,14 @@ export class FrontEndStack extends cdk.Stack {
       })
     );
 
+    let domainNames: string[] = [];
+    if (domainName) {
+      domainNames.push(domainName);
+      if (buildStage === "prod") {
+        domainNames.push(`www.${domainName}`);
+      }
+    }
+
     const distributionProps: cloudfront.DistributionProps = {
       comment: `${service}-${buildStage}-frontend-distribution`,
       defaultBehavior: {
@@ -85,8 +106,11 @@ export class FrontEndStack extends cdk.Stack {
         },
       ],
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
-      domainNames: undefined, // TODO
-      certificate: undefined, // TODO - us-east-1
+      ...(domainName &&
+        certificate && {
+          domainNames: domainNames,
+          certificate: certificate,
+        }),
     };
 
     const cloudfrontDistribution = new cloudfront.Distribution(
@@ -95,6 +119,18 @@ export class FrontEndStack extends cdk.Stack {
       distributionProps
     );
     this.distributionDomainName = cloudfrontDistribution.distributionDomainName;
+
+    if (domainName && hostedZone) {
+      for (const domain of domainNames) {
+        new route53.ARecord(this, `${service}-ARecord-${domain}`, {
+          recordName: domain,
+          target: route53.RecordTarget.fromAlias(
+            new targets.CloudFrontTarget(cloudfrontDistribution)
+          ),
+          zone: hostedZone,
+        });
+      }
+    }
 
     new ssm.StringParameter(
       this,
@@ -108,6 +144,29 @@ export class FrontEndStack extends cdk.Stack {
     new ssm.StringParameter(this, `${service}-CloudFrontDomainNameParameter`, {
       parameterName: `/${service}/${buildStage}/${awsRegion}/cloudfront_domain_name`,
       stringValue: this.distributionDomainName,
+    });
+
+    new ssm.StringParameter(this, `${service}-FrontendBucketIdParameter`, {
+      parameterName: `/${service}/${buildStage}/${awsRegion}/s3_frontend_bucket_name`,
+      stringValue: frontendBucket.bucketName,
+    });
+
+    // Outputs
+    new cdk.CfnOutput(this, "CloudFrontDomainName", {
+      value: this.distributionDomainName,
+      description: "CloudFront distribution domain name",
+    });
+
+    if (domainName) {
+      new cdk.CfnOutput(this, "CustomDomainName", {
+        value: domainName,
+        description: "Custom domain name for the website",
+      });
+    }
+
+    new cdk.CfnOutput(this, "S3BucketName", {
+      value: frontendBucket.bucketName,
+      description: "S3 bucket name for frontend assets",
     });
   }
 }

@@ -1,7 +1,7 @@
 #!/bin/bash
 mkdir -p logs
 source ./scripts/local-vars.sh
-exec > >(tee logs/deploy-$APP_VERSION-log.txt) 2>&1
+exec > >(tee logs/infrastructure-deploy-$(date +%Y%m%d_%H%M%S).log) 2>&1
 
 echo "Starting deployment for version $APP_VERSION"
 
@@ -16,6 +16,8 @@ if [ -z "$CDK_DEPLOY_ACCOUNT" ]; then
     echo "AWS credentials not found. Did you run 'aws configure' or set AWS_PROFILE?"
     exit 1
 fi
+
+export CDK_DEPLOY_ACCOUNT
 
 cd ./src/infrastructure  || { echo "Failed to change directory!"; exit 1; }
 

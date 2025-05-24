@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.1.3 - 2025-05-24
+
+### Added
+
+- Custom domain support with SSL certificate management
+- Route53 hosted zone integration for DNS management
+- Certificate stack for SSL/TLS certificate provisioning
+- Enhanced CloudFormation outputs for API Gateway, Cognito, and Frontend stacks
+- Debug logging in API URL formatting for better troubleshooting
+
+### Changed
+
+- Refactored API Gateway to use custom domain integration
+- Enhanced Cognito configuration with custom domain URL handling
+- Updated frontend stack with certificate and Route53 integration
+- Restructured infrastructure stack dependencies for cross-region support
+
+### Fixed
+
+- Infrastructure deployment environment variable export for child processes
+- Frontend configuration for custom domain deployments
+
 ## 0.1.2 - 2025-05-23
 
 ### Fix

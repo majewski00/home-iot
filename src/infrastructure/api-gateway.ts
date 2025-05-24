@@ -7,9 +7,9 @@ interface ApiStackProps extends cdk.StackProps {
   service: string;
   buildStage: string;
   awsRegion: string;
-  domainName?: string;
   frontend: {
     distributionDomainName: string;
+    customDomainName?: string;
   };
   cognito: {
     userPoolId: string;
@@ -21,8 +21,9 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { service, buildStage, awsRegion, domainName, frontend, cognito } =
-      props;
+    const { service, buildStage, awsRegion, frontend, cognito } = props;
+
+    const domainName = frontend.customDomainName;
 
     const httpApi = new apigatewayv2.HttpApi(this, `${service}-HttpApi`, {
       apiName: `${service}-${buildStage}-http-api`,
@@ -82,6 +83,16 @@ export class ApiStack extends cdk.Stack {
     new ssm.StringParameter(this, `${service}-HttpApiUrlParameter`, {
       parameterName: `/${service}/${buildStage}/${awsRegion}/http_api_url`,
       stringValue: httpApi.apiEndpoint, // starts with https://
+    });
+
+    // Outputs
+    new cdk.CfnOutput(this, "HttpApiUrl", {
+      value: httpApi.apiEndpoint,
+      description: "HTTP API URL",
+    });
+    new cdk.CfnOutput(this, "HttpApiId", {
+      value: httpApi.apiId,
+      description: "HTTP API ID",
     });
   }
 }
