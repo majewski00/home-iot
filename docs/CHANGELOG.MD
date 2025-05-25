@@ -12,6 +12,10 @@ All notable changes to this project will be documented in this file.
 - Pop-up after Action is pressed to be able to cancel
 - Daily Action
 
+### Changed
+
+- rename `data.ts` to `entry.ts`
+
 ## 0.1.3 - 2025-05-24
 
 ### Added
