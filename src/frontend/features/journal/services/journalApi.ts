@@ -9,11 +9,11 @@ import {
   JournalSaveEntryBody,
   JournalSaveStructureBody,
   JournalAddActionBody,
-  JournalRemoveActionBody,
-  JournalRegisterActionBody,
+  JournalQuickFillResponse,
+  JournalQuickFillBody,
 } from "@src-types/journal/api.types";
 
-// journal/data.ts
+// journal/entry.ts
 
 export const fetchJournalEntry = async (date: string): Promise<JournalEntry> =>
   getJson(ROUTES.JOURNAL_FETCH_ENTRY, { date }, {}, {}, { cacheBust: true });
@@ -31,6 +31,11 @@ export const fetchFirstEntryDate = async (): Promise<{ date: string }> =>
     {},
     { cacheBust: false }
   );
+
+export const quickFillJournal = async (
+  quickFillBody: JournalQuickFillBody
+): Promise<JournalQuickFillResponse> =>
+  postJson(ROUTES.JOURNAL_QUICK_FILL, quickFillBody, {}, { cacheBust: true });
 
 // journal/structure.ts
 

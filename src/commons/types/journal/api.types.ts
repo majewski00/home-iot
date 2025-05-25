@@ -1,7 +1,7 @@
 /**
  * Journal API types
  */
-import type { FieldValue, Group } from "./journal.types";
+import type { FieldValue, Group, JournalEntry } from "./journal.types";
 
 export type ErrorResponse = { message: string; error?: string };
 
@@ -55,4 +55,13 @@ export interface JournalRegisterActionBody {
 export interface JournalReorderActionBody {
   id: string;
   order: number;
+}
+
+export interface JournalQuickFillBody {
+  date: string;
+}
+
+export interface JournalQuickFillResponse {
+  success: boolean;
+  entry?: JournalEntry;
 }

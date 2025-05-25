@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.2.1 - 2025-05-25
+
+### Added
+
+- Quick Fill - demo (requires some changes)
+- Default values for Number FieldTypes
+
 ## 0.2.0 - 2025-05-25
 
 ### Added

@@ -7,11 +7,13 @@ import {
   stripBaseItem,
 } from "@helpers/ddb";
 import * as ROUTES from "@apiRoutes";
-import { JournalEntry } from "@src-types/journal/journal.types";
+import { JournalEntry, Journal } from "@src-types/journal/journal.types";
 import {
   Locals,
   ErrorResponse,
   JournalSaveEntryBody,
+  JournalQuickFillBody,
+  JournalQuickFillResponse,
 } from "@src-types/journal/api.types";
 import logger from "../utils/logger";
 
@@ -282,6 +284,146 @@ export default (router: Router) => {
         routeLogger.error("Failed to fetch first entry date", { error });
         res.status(500).send({
           message: "Failed to fetch the entry.",
+          error: error as string,
+        });
+      }
+    }
+  );
+
+  // * Fill today's entry with yesterday's values
+  router.post(
+    ROUTES.JOURNAL_QUICK_FILL,
+    async (
+      req: Request<{}, JournalQuickFillResponse, JournalQuickFillBody, {}>,
+      res: Response<JournalQuickFillResponse | ErrorResponse, Locals>
+    ) => {
+      const routeLogger = logger.withContext({
+        route: ROUTES.JOURNAL_QUICK_FILL,
+        userId: res.locals.user.sub,
+      });
+
+      routeLogger.info("Filling today's entry with yesterday's values");
+
+      const today = req.body.date;
+      const targetDate = new Date(today);
+      targetDate.setDate(targetDate.getDate() - 1);
+      const yesterdayStr = targetDate.toISOString().split("T")[0];
+
+      try {
+        // 1. Get yesterday's entry
+        const yesterdayEntries = await queryItems<JournalEntry & BaseItem>(
+          process.env.DYNAMODB_TABLE_NAME!,
+          `USER#${res.locals.user.sub}#ENTRIES`,
+          `DATE#${yesterdayStr}`
+        );
+
+        if (yesterdayEntries.length === 0) {
+          routeLogger.warn("No entry found for yesterday", {
+            date: yesterdayStr,
+          });
+          res.status(404).send({ message: "No entry found for yesterday." });
+          return;
+        }
+
+        const yesterdayEntry = yesterdayEntries[0];
+
+        // 2. Get today's structure to validate field compatibility
+        const todayStructures = await queryItems<Journal & BaseItem>(
+          process.env.DYNAMODB_TABLE_NAME!,
+          `USER#${res.locals.user.sub}#STRUCTURE`,
+          "STRUCTURE#"
+        );
+
+        const activeStructure = todayStructures.find((s) => s.isActive);
+        if (!activeStructure) {
+          routeLogger.warn("No active structure found");
+          res.status(404).send({ message: "No active structure found." });
+          return;
+        }
+
+        // 3. Filter yesterday's values to only include fields that exist in today's structure
+        const validFieldTypeIds = new Set<string>();
+        activeStructure.groups.forEach((group) => {
+          group.fields.forEach((field) => {
+            field.fieldTypes.forEach((fieldType) => {
+              validFieldTypeIds.add(fieldType.id);
+            });
+          });
+        });
+
+        const validValues = yesterdayEntry.values.filter((value) =>
+          validFieldTypeIds.has(value.fieldTypeId)
+        );
+
+        routeLogger.debug("Filtered values for compatibility", {
+          originalCount: yesterdayEntry.values.length,
+          validCount: validValues.length,
+        });
+
+        // 4. Check if today's entry already exists
+        const todayEntries = await queryItems<JournalEntry & BaseItem>(
+          process.env.DYNAMODB_TABLE_NAME!,
+          `USER#${res.locals.user.sub}#ENTRIES`,
+          `DATE#${today}`
+        );
+
+        const currentTimestamp = new Date().toISOString();
+
+        if (todayEntries.length > 0) {
+          // Update existing entry
+          const updatedEntry = await updateItem<JournalEntry & BaseItem>(
+            process.env.DYNAMODB_TABLE_NAME!,
+            {
+              PK: `USER#${res.locals.user.sub}#ENTRIES`,
+              SK: `DATE#${today}`,
+            },
+            {
+              values: validValues.map((value) => ({
+                ...value,
+                updatedAt: currentTimestamp,
+              })),
+              updatedAt: currentTimestamp,
+            }
+          );
+
+          routeLogger.info(
+            "Successfully updated today's entry with yesterday's values"
+          );
+          res.status(200).send({
+            success: true,
+            entry: stripBaseItem(updatedEntry),
+          });
+        } else {
+          // Create new entry
+          const newEntry: JournalEntry & BaseItem = {
+            PK: `USER#${res.locals.user.sub}#ENTRIES`,
+            SK: `DATE#${today}`,
+            userId: res.locals.user.sub,
+            date: today,
+            structureId: activeStructure.structureId,
+            values: validValues.map((value) => ({
+              ...value,
+              createdAt: currentTimestamp,
+              updatedAt: currentTimestamp,
+            })),
+            createdAt: currentTimestamp,
+            updatedAt: currentTimestamp,
+          };
+
+          await putItem(process.env.DYNAMODB_TABLE_NAME!, newEntry);
+
+          routeLogger.info(
+            "Successfully created today's entry with yesterday's values"
+          );
+          res.status(201).send({
+            success: true,
+            entry: stripBaseItem(newEntry),
+          });
+        }
+      } catch (error) {
+        routeLogger.error("Failed to fill yesterday's values", { error });
+        res.status(500).send({
+          message: "Failed to fill yesterday's values.",
           error: error as string,
         });
       }

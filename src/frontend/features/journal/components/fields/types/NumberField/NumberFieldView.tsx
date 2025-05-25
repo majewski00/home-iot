@@ -21,6 +21,7 @@ const NumberFieldView: React.FC<NumberFieldViewProps> = ({
   disabled = false,
 }) => {
   const [localValue, setLocalValue] = useState<string>(value?.toString() || "");
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   const minValue =
     fieldType.dataOptions?.min !== undefined
@@ -33,6 +34,17 @@ const NumberFieldView: React.FC<NumberFieldViewProps> = ({
       : undefined;
 
   const unitLabel = fieldType.dataOptions?.unit as string | undefined;
+  const defaultValue =
+    fieldType.dataOptions?.defaultValue !== undefined
+      ? Number(fieldType.dataOptions.defaultValue)
+      : undefined;
+
+  useEffect(() => {
+    if (!hasInitialized && value === null && defaultValue !== undefined) {
+      onChange(defaultValue);
+      setHasInitialized(true);
+    }
+  }, [hasInitialized, value, defaultValue, onChange]);
 
   useEffect(() => {
     setLocalValue(value?.toString() || "");
@@ -97,6 +109,9 @@ const NumberFieldView: React.FC<NumberFieldViewProps> = ({
           variant="outlined"
           size="small"
           type="number"
+          placeholder={
+            defaultValue !== undefined ? defaultValue.toString() : undefined
+          }
           inputProps={{
             min: minValue,
             max: maxValue,

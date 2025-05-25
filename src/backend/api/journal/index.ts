@@ -1,5 +1,5 @@
 import { Router } from "express";
-import dataRoute from "./data";
+import dataRoute from "./entry";
 import structureRoute from "./structure";
 import actionsRoute from "./actions";
 

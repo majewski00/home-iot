@@ -22,6 +22,7 @@ const NumberNavigationFieldView: React.FC<NumberNavigationFieldViewProps> = ({
   disabled = false,
 }) => {
   const [localValue, setLocalValue] = useState<string>(value?.toString() || "");
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   // Get min/max values from dataOptions if available
   const minValue =
@@ -36,6 +37,17 @@ const NumberNavigationFieldView: React.FC<NumberNavigationFieldViewProps> = ({
 
   // Get unit label from dataOptions if available
   const unitLabel = fieldType.dataOptions?.unit as string | undefined;
+  const defaultValue =
+    fieldType.dataOptions?.defaultValue !== undefined
+      ? Number(fieldType.dataOptions.defaultValue)
+      : undefined;
+
+  useEffect(() => {
+    if (!hasInitialized && value === null && defaultValue !== undefined) {
+      onChange(defaultValue);
+      setHasInitialized(true);
+    }
+  }, [hasInitialized, value, defaultValue, onChange]);
 
   useEffect(() => {
     setLocalValue(value?.toString() || "");
@@ -132,6 +144,9 @@ const NumberNavigationFieldView: React.FC<NumberNavigationFieldViewProps> = ({
           variant="outlined"
           size="small"
           type="number"
+          placeholder={
+            defaultValue !== undefined ? defaultValue.toString() : undefined
+          }
           inputProps={{
             min: minValue,
             max: maxValue,

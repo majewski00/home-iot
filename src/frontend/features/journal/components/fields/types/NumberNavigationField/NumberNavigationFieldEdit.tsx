@@ -57,6 +57,11 @@ const NumberNavigationFieldEdit: React.FC<NumberNavigationFieldEditProps> = ({
   const [unitLabel, setUnitLabel] = useState<string>(
     (fieldType.dataOptions?.unit as string) || ""
   );
+  const [defaultValue, setDefaultValue] = useState<number | undefined>(
+    fieldType.dataOptions?.defaultValue !== undefined
+      ? Number(fieldType.dataOptions.defaultValue)
+      : undefined
+  );
 
   // Handle description change
   const handleDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,6 +96,21 @@ const NumberNavigationFieldEdit: React.FC<NumberNavigationFieldEditProps> = ({
         dataOptions: {
           ...fieldType.dataOptions,
           max: newMaxValue,
+        },
+      });
+    }
+  };
+
+  // Handle default value change
+  const handleDefaultValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const newDefaultValue = value === "" ? undefined : Number(value);
+    setDefaultValue(newDefaultValue);
+    if (onUpdate) {
+      onUpdate({
+        dataOptions: {
+          ...fieldType.dataOptions,
+          defaultValue: newDefaultValue,
         },
       });
     }
@@ -168,12 +188,12 @@ const NumberNavigationFieldEdit: React.FC<NumberNavigationFieldEditProps> = ({
         </Box>
       </Box>
 
-      {/* Row 2: Max Value & Unit Label */}
+      {/* Row 2: Min Value, Max Value & Default Value */}
       <Box
         display="flex"
         sx={{ flexDirection: { xs: "column", sm: "row" }, gap: 2 }}
       >
-        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
+        <Box sx={{ width: { xs: "100%", sm: "calc(33.33% - 11px)" } }}>
           <TextField
             fullWidth
             label="Minimum Value"
@@ -181,10 +201,9 @@ const NumberNavigationFieldEdit: React.FC<NumberNavigationFieldEditProps> = ({
             value={minValue}
             onChange={handleMinValueChange}
             size="small"
-            // Removed margin="normal"
           />
         </Box>
-        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
+        <Box sx={{ width: { xs: "100%", sm: "calc(33.33% - 11px)" } }}>
           <TextField
             fullWidth
             label="Maximum Value (optional)"
@@ -193,7 +212,17 @@ const NumberNavigationFieldEdit: React.FC<NumberNavigationFieldEditProps> = ({
             onChange={handleMaxValueChange}
             size="small"
             placeholder="No limit"
-            // Removed margin="normal"
+          />
+        </Box>
+        <Box sx={{ width: { xs: "100%", sm: "calc(33.33% - 11px)" } }}>
+          <TextField
+            fullWidth
+            label="Default Value (optional)"
+            type="number"
+            value={defaultValue === undefined ? "" : defaultValue}
+            onChange={handleDefaultValueChange}
+            size="small"
+            placeholder="No default"
           />
         </Box>
       </Box>
@@ -227,7 +256,7 @@ const NumberNavigationFieldEdit: React.FC<NumberNavigationFieldEditProps> = ({
           <TextField
             disabled
             size="small"
-            value="0" // Placeholder value
+            value={defaultValue !== undefined ? defaultValue.toString() : "0"} // Use defaultValue
             inputProps={{ style: { textAlign: "center" } }}
             sx={{
               mx: 1,

@@ -12,7 +12,11 @@ import {
   Fade,
   useTheme,
 } from "@mui/material";
-import { Edit as EditIcon, Save as SaveIcon } from "@mui/icons-material";
+import {
+  Edit as EditIcon,
+  Save as SaveIcon,
+  ContentCopy as CopyIcon,
+} from "@mui/icons-material";
 import { useJournalStructure } from "../hooks/useJournalStructure";
 import { useJournalEntry } from "../hooks/useJournalEntry";
 import DateNavigator from "./DateNavigator";
@@ -59,6 +63,7 @@ const JournalPage: React.FC = () => {
     saveEntry,
     updateValue,
     refreshEntry,
+    quickFillValues,
   } = useJournalEntry(structure, selectedDate, isEditMode);
 
   useEffect(() => {
@@ -117,6 +122,8 @@ const JournalPage: React.FC = () => {
       setSaveError(true);
     }
   };
+
+  const isToday = selectedDate === new Date().toISOString().split("T")[0];
 
   if (isLoadingStructure) {
     return (
@@ -252,6 +259,19 @@ const JournalPage: React.FC = () => {
           </Box>
 
           <Box display="flex" alignItems="center" gap={2}>
+            {isToday && !isEditMode && (
+              <Button
+                variant="outlined"
+                startIcon={<CopyIcon />}
+                size="small"
+                onClick={() => quickFillValues()}
+                disabled={!isToday}
+                sx={{ borderRadius: 2 }}
+                title={"Fill in the journal with yesterday's values"}
+              >
+                Quick Fill
+              </Button>
+            )}
             <Button
               variant="outlined"
               startIcon={<EditIcon />}

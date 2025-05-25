@@ -57,6 +57,11 @@ const NumberFieldEdit: React.FC<NumberFieldEditProps> = ({
   const [unitLabel, setUnitLabel] = useState<string>(
     (fieldType.dataOptions?.unit as string) || ""
   );
+  const [defaultValue, setDefaultValue] = useState<number | undefined>(
+    fieldType.dataOptions?.defaultValue !== undefined
+      ? Number(fieldType.dataOptions.defaultValue)
+      : undefined
+  );
 
   // Handle description change
   const handleDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,6 +96,21 @@ const NumberFieldEdit: React.FC<NumberFieldEditProps> = ({
         dataOptions: {
           ...fieldType.dataOptions,
           max: newMaxValue,
+        },
+      });
+    }
+  };
+
+  // Handle default value change
+  const handleDefaultValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const newDefaultValue = value === "" ? undefined : Number(value);
+    setDefaultValue(newDefaultValue);
+    if (onUpdate) {
+      onUpdate({
+        dataOptions: {
+          ...fieldType.dataOptions,
+          defaultValue: newDefaultValue,
         },
       });
     }
@@ -168,12 +188,12 @@ const NumberFieldEdit: React.FC<NumberFieldEditProps> = ({
         </Box>
       </Box>
 
-      {/* Row 2: Max Value & Unit Label */}
+      {/* Row 2: Min Value, Max Value & Default Value */}
       <Box
         display="flex"
         sx={{ flexDirection: { xs: "column", sm: "row" }, gap: 2 }}
       >
-        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
+        <Box sx={{ width: { xs: "100%", sm: "calc(33.33% - 11px)" } }}>
           <TextField
             fullWidth
             label="Minimum Value"
@@ -181,10 +201,9 @@ const NumberFieldEdit: React.FC<NumberFieldEditProps> = ({
             value={minValue}
             onChange={handleMinValueChange}
             size="small"
-            // Removed margin="normal"
           />
         </Box>
-        <Box sx={{ width: { xs: "100%", sm: "calc(50% - 8px)" } }}>
+        <Box sx={{ width: { xs: "100%", sm: "calc(33.33% - 11px)" } }}>
           <TextField
             fullWidth
             label="Maximum Value (optional)"
@@ -193,7 +212,17 @@ const NumberFieldEdit: React.FC<NumberFieldEditProps> = ({
             onChange={handleMaxValueChange}
             size="small"
             placeholder="No limit"
-            // Removed margin="normal"
+          />
+        </Box>
+        <Box sx={{ width: { xs: "100%", sm: "calc(33.33% - 11px)" } }}>
+          <TextField
+            fullWidth
+            label="Default Value (optional)"
+            type="number"
+            value={defaultValue === undefined ? "" : defaultValue}
+            onChange={handleDefaultValueChange}
+            size="small"
+            placeholder="No default"
           />
         </Box>
       </Box>
@@ -224,17 +253,17 @@ const NumberFieldEdit: React.FC<NumberFieldEditProps> = ({
           <TextField
             disabled
             size="small"
-            value="0" // Placeholder value
+            value={defaultValue !== undefined ? defaultValue.toString() : "0"}
             inputProps={{ style: { textAlign: "center" } }}
             sx={{
               mx: 1,
-              width: "80px", // Match width from View component
+              width: "80px",
               "& .MuiInputBase-input.Mui-disabled": {
-                "-webkit-text-fill-color": "rgba(0, 0, 0, 0.6)", // Ensure text color in disabled state
+                "-webkit-text-fill-color": "rgba(0, 0, 0, 0.6)",
               },
               "& .MuiOutlinedInput-root.Mui-disabled .MuiOutlinedInput-notchedOutline":
                 {
-                  borderColor: "rgba(0, 0, 0, 0.26)", // Match disabled border color
+                  borderColor: "rgba(0, 0, 0, 0.26)",
                 },
             }}
           />
