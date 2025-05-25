@@ -61,12 +61,48 @@ export default (router: Router) => {
         return;
       }
 
+      // Get active structure to assign structureId
+      let activeStructureId: string;
+      try {
+        routeLogger.debug("Fetching active structure for structureId");
+        const structures = await queryItems<
+          { structureId: string; isActive: boolean } & BaseItem
+        >(
+          process.env.DYNAMODB_TABLE_NAME!,
+          `USER#${res.locals.user.sub}#STRUCTURE`,
+          "STRUCTURE#"
+        );
+
+        const activeStructure = structures?.find((s) => s.isActive);
+        if (!activeStructure) {
+          routeLogger.error("No active structure found");
+          res.status(400).send({
+            message:
+              "No active journal structure found. Please create a structure first.",
+          });
+          return;
+        }
+
+        activeStructureId = activeStructure.structureId;
+        routeLogger.debug("Active structure found", {
+          structureId: activeStructureId,
+        });
+      } catch (error) {
+        routeLogger.error("Failed to fetch active structure", { error });
+        res.status(500).send({
+          message: "Failed to fetch journal structure.",
+          error: error as string,
+        });
+        return;
+      }
+
       if (isNewEntry) {
         const newEntry: JournalEntry & BaseItem = {
           PK: `USER#${res.locals.user.sub}#ENTRIES`,
           SK: `DATE#${req.body.date}`,
           userId: res.locals.user.sub,
           date: req.body.date,
+          structureId: activeStructureId,
           values: req.body.values,
           createdAt: newDate,
           updatedAt: newDate,
@@ -74,6 +110,7 @@ export default (router: Router) => {
 
         routeLogger.debug("Creating new entry", {
           valuesCount: req.body.values.length,
+          structureId: activeStructureId,
         });
 
         try {
@@ -90,10 +127,14 @@ export default (router: Router) => {
           return;
         }
       } else {
-        const newParams = { values: req.body.values, updatedAt: newDate };
+        const newParams = {
+          values: req.body.values,
+          updatedAt: newDate,
+        };
 
         routeLogger.debug("Updating existing entry", {
           valuesCount: req.body.values.length,
+          structureId: activeStructureId,
         });
 
         try {
@@ -154,13 +195,43 @@ export default (router: Router) => {
 
         if (!existingEntry) {
           routeLogger.info("No entry found, returning empty template");
-          res.status(200).send({
-            date,
-            values: [],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          } as JournalEntry);
-          return;
+
+          // Get active structure for empty template
+          try {
+            const structures = await queryItems<
+              { structureId: string; isActive: boolean } & BaseItem
+            >(
+              process.env.DYNAMODB_TABLE_NAME!,
+              `USER#${res.locals.user.sub}#STRUCTURE`,
+              "STRUCTURE#"
+            );
+
+            const activeStructure = structures?.find((s) => s.isActive);
+            if (!activeStructure) {
+              res.status(400).send({
+                message: "No active journal structure found.",
+              });
+              return;
+            }
+
+            res.status(200).send({
+              date,
+              structureId: activeStructure.structureId,
+              values: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            } as JournalEntry);
+            return;
+          } catch (error) {
+            routeLogger.error("Failed to fetch structure for empty template", {
+              error,
+            });
+            res.status(500).send({
+              message: "Failed to fetch journal structure.",
+              error: error as string,
+            });
+            return;
+          }
         } else {
           routeLogger.info("Entry found, returning to client");
           res.status(200).send(stripBaseItem(existingEntry));

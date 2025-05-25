@@ -57,6 +57,7 @@ export interface UseJournalStructureReturn {
   error: string | null;
   hasChanges: boolean;
   newUser: boolean;
+  isHistorical: boolean;
   methods: UseJournalStructureMethods;
 }
 
@@ -68,17 +69,29 @@ export interface UseJournalStructureReturn {
  * - Creating and modifying journal, groups, fields, and field types
  * - Saving changes to the backend
  *
+ * @param date Optional date to fetch historical structure for
  * @returns Journal structure and management functions
  */
-export const useJournalStructure = (): UseJournalStructureReturn => {
+export const useJournalStructure = (
+  date: string = new Date().toISOString().split("T")[0]
+): UseJournalStructureReturn => {
   const [structure, setStructure] = useState<Journal | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState<boolean>(false);
   const [newUser, setNewUser] = useState<boolean>(false);
+  const [isHistorical, setIsHistorical] = useState<boolean>(false);
+  const [deletedElements, setDeletedElements] = useState<{
+    groups: string[];
+    fields: string[];
+    fieldTypes: string[];
+  }>({ groups: [], fields: [], fieldTypes: [] });
 
   const createDefaultStructure = useCallback(async (): Promise<Journal> => {
     const defaultStructure: Journal = {
+      structureId: uuidv4(),
+      isActive: true,
+      effectiveFrom: new Date().toISOString(),
       groups: [
         {
           id: uuidv4(),
@@ -93,8 +106,12 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
       updatedAt: new Date().toISOString(),
     };
     try {
-      await saveJournalStructure(defaultStructure);
-      setStructure(defaultStructure);
+      const saveData: JournalSaveStructureBody = {
+        groups: defaultStructure.groups,
+        currentDate: date, // THis will always be today's date
+      };
+      const savedStructure = await saveJournalStructure(saveData);
+      setStructure(savedStructure);
       setNewUser(true);
       setHasChanges(false);
     } catch (error) {
@@ -109,13 +126,20 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
     setIsLoading(true);
     setError(null);
     try {
-      const journalStructure = await fetchJournalStructure();
+      const journalStructure = await fetchJournalStructure(date);
       setStructure(journalStructure);
-
+      setDeletedElements({ groups: [], fields: [], fieldTypes: [] });
       setHasChanges(false);
+
+      // Determine if this is a historical structure
+      setIsHistorical(!journalStructure.isActive);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
-        await createDefaultStructure();
+        if (date === new Date().toISOString().split("T")[0]) {
+          await createDefaultStructure();
+        } else {
+          setError("No structure found for the selected date");
+        }
       } else {
         setError("Failed to load journal structure");
         console.error("Error in useJournalStructure refresh:", err);
@@ -123,13 +147,13 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
     } finally {
       setIsLoading(false);
     }
-  }, [createDefaultStructure]);
+  }, [createDefaultStructure, date]);
 
   useEffect(() => {
     refreshStructure();
     console.log("useJournalStructure: refreshStructure called");
     // TODO: if newUser --> back to false
-  }, [refreshStructure, createDefaultStructure]);
+  }, [refreshStructure, createDefaultStructure, date]);
 
   const addGroup = async (
     name: string,
@@ -535,13 +559,13 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
     }
 
     try {
-      const updatedGroups = structure.groups.filter((g) => g.id !== groupId);
-
-      if (updatedGroups.length === structure.groups.length) {
+      const groupToRemove = structure.groups.find((g) => g.id === groupId);
+      if (!groupToRemove) {
         setError("Group not found");
         return false;
       }
 
+      const updatedGroups = structure.groups.filter((g) => g.id !== groupId);
       const reorderedGroups = updatedGroups.map((g, index) => ({
         ...g,
         order: index,
@@ -554,6 +578,17 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
       };
 
       setStructure(updatedStructure);
+      setDeletedElements((prev) => ({
+        ...prev,
+        groups: [...prev.groups, groupId],
+        fields: [...prev.fields, ...groupToRemove.fields.map((f) => f.id)],
+        fieldTypes: [
+          ...prev.fieldTypes,
+          ...groupToRemove.fields.flatMap((f) =>
+            f.fieldTypes.map((ft) => ft.id)
+          ),
+        ],
+      }));
       setHasChanges(true);
 
       return true;
@@ -572,10 +607,13 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
 
     try {
       let fieldFound = false;
+      let fieldToRemove: Field | null = null;
+
       const updatedGroups = structure.groups.map((g) => {
         const fieldIndex = g.fields.findIndex((f) => f.id === fieldId);
         if (fieldIndex !== -1) {
           fieldFound = true;
+          fieldToRemove = g.fields[fieldIndex];
           const updatedFields = g.fields.filter((f) => f.id !== fieldId);
 
           const reorderedFields = updatedFields.map((f, index) => ({
@@ -592,7 +630,7 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
         return g;
       });
 
-      if (!fieldFound) {
+      if (!fieldFound || !fieldToRemove) {
         setError("Field not found");
         return false;
       }
@@ -604,6 +642,14 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
       };
 
       setStructure(updatedStructure);
+      setDeletedElements((prev) => ({
+        ...prev,
+        fields: [...prev.fields, fieldId],
+        fieldTypes: [
+          ...prev.fieldTypes,
+          ...(fieldToRemove?.fieldTypes.map((ft) => ft.id) || []),
+        ],
+      }));
       setHasChanges(true);
 
       return true;
@@ -622,22 +668,40 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
 
     try {
       let fieldTypeFound = false;
+      let isCheckFieldType = false;
+
+      // Check if this is a CHECK field type and prevent removal
+      for (const group of structure.groups) {
+        for (const field of group.fields) {
+          const fieldType = field.fieldTypes.find(
+            (ft) => ft.id === fieldTypeId
+          );
+          if (fieldType) {
+            fieldTypeFound = true;
+            if (fieldType.kind === "CHECK") {
+              isCheckFieldType = true;
+              setError(
+                "Cannot remove CHECK field type as it is required for all fields"
+              );
+              return false;
+            }
+            break;
+          }
+        }
+        if (fieldTypeFound) break;
+      }
+
+      if (!fieldTypeFound) {
+        setError("Field type not found");
+        return false;
+      }
+
       const updatedGroups = structure.groups.map((g) => {
         const updatedFields = g.fields.map((f) => {
           const fieldTypeIndex = f.fieldTypes.findIndex(
             (ft) => ft.id === fieldTypeId
           );
           if (fieldTypeIndex !== -1) {
-            fieldTypeFound = true;
-
-            // Check if this is a CHECK field type and prevent removal
-            if (f.fieldTypes[fieldTypeIndex].kind === "CHECK") {
-              setError(
-                "Cannot remove CHECK field type as it is required for all fields"
-              );
-              return false;
-            }
-
             const updatedFieldTypes = f.fieldTypes.filter(
               (ft) => ft.id !== fieldTypeId
             );
@@ -656,9 +720,12 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
           return f;
         });
 
-        if (
-          updatedFields.some((f) => f !== g.fields.find((gf) => gf.id === f.id))
-        ) {
+        const hasChangedFields = updatedFields.some(
+          (f, index) =>
+            f.fieldTypes.length !== g.fields[index].fieldTypes.length
+        );
+
+        if (hasChangedFields) {
           return {
             ...g,
             fields: updatedFields,
@@ -668,11 +735,6 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
         return g;
       });
 
-      if (!fieldTypeFound) {
-        setError("Field type not found");
-        return false;
-      }
-
       const updatedStructure = {
         ...structure,
         groups: updatedGroups,
@@ -680,6 +742,10 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
       };
 
       setStructure(updatedStructure);
+      setDeletedElements((prev) => ({
+        ...prev,
+        fieldTypes: [...prev.fieldTypes, fieldTypeId],
+      }));
       setHasChanges(true);
 
       return true;
@@ -927,13 +993,21 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
       setIsLoading(true);
       setError(null);
 
+      const hasDeletedElements =
+        deletedElements.groups.length > 0 ||
+        deletedElements.fields.length > 0 ||
+        deletedElements.fieldTypes.length > 0;
+
       const saveData: JournalSaveStructureBody = {
         groups: structure.groups,
+        ...(hasDeletedElements && { deletedElements }),
+        currentDate: date,
       };
 
       const savedJournal = await saveJournalStructure(saveData);
 
       setStructure(savedJournal);
+      setDeletedElements({ groups: [], fields: [], fieldTypes: [] });
       setHasChanges(false);
 
       return savedJournal;
@@ -987,6 +1061,7 @@ export const useJournalStructure = (): UseJournalStructureReturn => {
     error,
     hasChanges,
     newUser,
+    isHistorical,
     methods,
   };
 };

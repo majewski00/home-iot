@@ -47,8 +47,9 @@ const JournalPage: React.FC = () => {
     error: structureError,
     hasChanges: structureHasChanges,
     newUser,
+    isHistorical,
     methods,
-  } = useJournalStructure();
+  } = useJournalStructure(selectedDate);
 
   const {
     entry,
@@ -74,14 +75,17 @@ const JournalPage: React.FC = () => {
 
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
-    if (searchParams.get("mode") === "edit") {
+    if (isHistorical) {
+      // Prevent editing historical structures
+      setIsEditMode(false);
+    } else if (searchParams.get("mode") === "edit") {
       setIsEditMode(true);
     } else if (newUser) {
       setIsEditMode(true);
     } else {
       setIsEditMode(false);
     }
-  }, [location.search]);
+  }, [location.search, isHistorical, newUser]);
 
   useEffect(() => {
     setSaveSuccess(false);
@@ -90,6 +94,9 @@ const JournalPage: React.FC = () => {
 
   const handleDateChange = (date: string) => {
     setSelectedDate(date);
+    if (isEditMode) {
+      setIsEditMode(false);
+    }
   };
 
   const handleSaveEntry = async () => {
@@ -230,9 +237,19 @@ const JournalPage: React.FC = () => {
           alignItems="center"
           mb={2}
         >
-          <Typography variant="h4" component="h1">
-            Journal
-          </Typography>
+          <Box display="flex" alignItems="center" gap={2}>
+            <Typography variant="h4" component="h1">
+              Journal
+            </Typography>
+            {isHistorical && (
+              <Chip
+                label="Historical View"
+                color="warning"
+                size="small"
+                sx={{ ml: 2 }}
+              />
+            )}
+          </Box>
 
           <Box display="flex" alignItems="center" gap={2}>
             <Button
@@ -240,7 +257,13 @@ const JournalPage: React.FC = () => {
               startIcon={<EditIcon />}
               size="small"
               onClick={() => setIsEditMode(true)}
+              disabled={isHistorical}
               sx={{ borderRadius: 2 }}
+              title={
+                isHistorical
+                  ? "Cannot edit historical structures"
+                  : "Edit journal structure"
+              }
             >
               Edit
             </Button>

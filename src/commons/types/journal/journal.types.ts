@@ -4,6 +4,9 @@
 
 // Journal represents the overall structure of a user's journal
 export interface Journal {
+  structureId: string;
+  isActive: boolean;
+  effectiveFrom: Date | string;
   groups: Group[];
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -53,6 +56,7 @@ export interface FieldType {
 // JournalEntry represents a single day's journal entry
 export interface JournalEntry {
   date: string; // ISO date string (YYYY-MM-DD)
+  structureId: string;
   values: FieldValue[];
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -88,7 +92,9 @@ export interface Action {
   name: string;
   description: string;
   fieldId: string;
-  options?: ActionOption[]; // there is option to ignore any field - the Action will just switch Field to Done (CHECK)
+  options?: ActionOption[];
   createdAt: Date | string;
-  order?: number; // Added to support ordering of actions
+  order: number;
+  isDailyAction?: boolean;
+  lastTriggeredDate?: string;
 }

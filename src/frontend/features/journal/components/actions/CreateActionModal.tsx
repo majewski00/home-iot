@@ -9,6 +9,8 @@ import {
   Box,
   Typography,
   CircularProgress,
+  FormControlLabel,
+  Checkbox,
 } from "@mui/material";
 import { UseJournalActionsReturn } from "../../hooks/useJournalActions";
 import SelectFieldModal from "./SelectFieldModal";
@@ -55,6 +57,7 @@ const CreateActionModal: React.FC<CreateActionModalProps> = ({
   const [useCustomValue, setUseCustomValue] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDailyAction, setIsDailyAction] = useState(false);
 
   const handleOpenSelectField = () => {
     setIsSelectFieldModalOpen(true);
@@ -133,11 +136,15 @@ const CreateActionModal: React.FC<CreateActionModalProps> = ({
         return;
       }
 
+      // If using custom value, the increment is not needed
+      const increment = useCustomValue ? undefined : incrementValue;
+
       await createAction(
         name.trim(),
         selectedField.fieldId,
         selectedFieldType.id,
-        useCustomValue ? undefined : incrementValue
+        increment,
+        isDailyAction
       );
 
       onActionCreated();
@@ -157,6 +164,7 @@ const CreateActionModal: React.FC<CreateActionModalProps> = ({
     setIncrementValue(1);
     setUseCustomValue(false);
     setError(null);
+    setIsDailyAction(false);
   };
 
   const handleClose = () => {
@@ -367,6 +375,20 @@ const CreateActionModal: React.FC<CreateActionModalProps> = ({
                   )}
                 </Box>
               )}
+
+            {/* Add checkbox for daily action */}
+            <Box mt={2}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={isDailyAction}
+                    onChange={(e) => setIsDailyAction(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label="Daily action (can only be used once per day)"
+              />
+            </Box>
 
             {error && (
               <Typography color="error" sx={{ mt: 2 }}>

@@ -14,11 +14,13 @@ export interface UseJournalActionsReturn {
   loading: boolean;
   error: string | null;
   registerAction: (actionId: string, value?: number) => Promise<boolean>;
+  isActionCompletedToday: (action: Action) => boolean;
   createAction: (
     name: string,
     fieldId: string,
     fieldTypeId: string,
-    incrementValue?: number
+    incrementValue?: number,
+    isDailyAction?: boolean
   ) => Promise<Action>;
   deleteAction: (actionId: string) => Promise<boolean>;
   updateActionOrder: (actionId: string, newOrder: number) => Promise<boolean>;
@@ -105,7 +107,8 @@ export const useJournalActions = (
       name: string,
       fieldId: string,
       fieldTypeId: string,
-      incrementValue?: number
+      incrementValue?: number,
+      isDailyAction?: boolean
     ) => {
       try {
         // For custom values, explicitly set isCustom to true and increment to null
@@ -124,6 +127,7 @@ export const useJournalActions = (
               isCustom: isCustom,
             },
           ],
+          isDailyAction: isDailyAction || false,
         });
         setActions((prev) => [...prev, newAction]);
         return newAction;
@@ -296,6 +300,13 @@ export const useJournalActions = (
     [structure, entry]
   );
 
+  const isActionCompletedToday = useCallback((action: Action): boolean => {
+    if (!action.isDailyAction || !action.lastTriggeredDate) return false;
+
+    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    return action.lastTriggeredDate === today;
+  }, []);
+
   useEffect(() => {
     fetchActions();
   }, [fetchActions]);
@@ -311,5 +322,6 @@ export const useJournalActions = (
     getEligibleFields,
     getActionDetails,
     refreshActions: fetchActions,
+    isActionCompletedToday,
   };
 };

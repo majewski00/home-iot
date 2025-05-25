@@ -6,7 +6,7 @@ export const JOURNAL_SAVE_ENTRY = `${JOURNAL_API}/entries`;
 export const JOURNAL_FETCH_ENTRY = `${JOURNAL_API}/entries/:date`;
 export const JOURNAL_FETCH_FIRST_ENTRY_DATE = `${JOURNAL_API}/first-entry-date`;
 // journal/structure.ts
-export const JOURNAL_FETCH_STRUCTURE = `${JOURNAL_API}/structure`;
+export const JOURNAL_FETCH_STRUCTURE = `${JOURNAL_API}/structure/:date`;
 export const JOURNAL_SAVE_STRUCTURE = `${JOURNAL_API}/structure`;
 // journal/actions.ts
 export const JOURNAL_FETCH_ACTIONS = `${JOURNAL_API}/actions`;

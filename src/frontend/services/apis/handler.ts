@@ -104,7 +104,6 @@ async function handleResponse(
   }
 
   if (!response.ok) {
-    console.log("API Error:", response);
     const body = (await response.json()) as ErrorResponse;
     throw new ApiError(body, response.status);
   }

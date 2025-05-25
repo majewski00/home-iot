@@ -4,7 +4,6 @@ import {
   Paper,
   Typography,
   IconButton,
-  Button,
   Tooltip,
   CircularProgress,
 } from "@mui/material";
@@ -15,11 +14,11 @@ import NumberInputModal from "./NumberInputModal";
 
 interface ActionItemProps {
   action: Action;
-  // registerAction, deleteAction, getActionDetails
   registerAction: UseJournalActionsReturn["registerAction"];
   deleteAction: UseJournalActionsReturn["deleteAction"];
   getActionDetails: UseJournalActionsReturn["getActionDetails"];
-  showDeleteButton?: boolean; // New optional parameter
+  showDeleteButton?: boolean;
+  isCompletedToday?: boolean;
 }
 
 const ActionItem: React.FC<ActionItemProps> = ({
@@ -27,7 +26,8 @@ const ActionItem: React.FC<ActionItemProps> = ({
   registerAction,
   deleteAction,
   getActionDetails,
-  showDeleteButton = true, // Default to true for backward compatibility
+  showDeleteButton = true,
+  isCompletedToday = false,
 }) => {
   const [isNumberModalOpen, setIsNumberModalOpen] = useState(false);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
@@ -57,6 +57,8 @@ const ActionItem: React.FC<ActionItemProps> = ({
   };
 
   const handleActionClick = () => {
+    if (isCompletedToday) return; // Don't proceed if daily action is completed
+
     if (!actionDetails) return;
 
     // For NUMBER_NAVIGATION or NUMBER with custom value, open the number input modal
@@ -69,7 +71,7 @@ const ActionItem: React.FC<ActionItemProps> = ({
       return;
     }
 
-    // Otherwise, register the action with the increment value
+    // Otherwise, register the action
     handleRegisterAction();
   };
 
@@ -86,13 +88,16 @@ const ActionItem: React.FC<ActionItemProps> = ({
           border: "1px solid rgba(0, 0, 0, 0.12)",
           borderRadius: 2,
           boxShadow: "none",
-          cursor: "pointer",
           transition: "all 0.2s ease-in-out",
           boxSizing: "border-box",
-          "&:hover": {
-            backgroundColor: "rgba(0, 0, 0, 0.04)",
-            transform: "translateY(-2px)",
-          },
+          opacity: isCompletedToday ? 0.5 : 1,
+          cursor: isCompletedToday ? "not-allowed" : "pointer",
+          "&:hover": isCompletedToday
+            ? {} // No hover effect when completed
+            : {
+                backgroundColor: "rgba(0, 0, 0, 0.04)",
+                transform: "translateY(-2px)",
+              },
         }}
         elevation={0}
         onClick={handleActionClick}
@@ -137,6 +142,17 @@ const ActionItem: React.FC<ActionItemProps> = ({
         >
           {actionDetails?.fieldTypeName || ""}
         </Typography>
+
+        {/* Optional: Add visual indicator for completed daily actions */}
+        {isCompletedToday && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ position: "absolute", bottom: 8, right: 8 }}
+          >
+            Completed today
+          </Typography>
+        )}
 
         <Box
           sx={{

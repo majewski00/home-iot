@@ -26,6 +26,7 @@ import logger from "../utils/logger";
 
 export default (router: Router) => {
   // * Fetch all actions for a user
+  // TODO: Check if the associated FieldType exists in the present journal structure
   router.get(
     ROUTES.JOURNAL_FETCH_ACTIONS,
     async (
@@ -73,10 +74,10 @@ export default (router: Router) => {
         userId: res.locals.user.sub,
       });
 
-      const { name, description, fieldId, options } = req.body;
+      const { name, description, fieldId, options, isDailyAction } = req.body;
       routeLogger.info("Adding new action", { name, fieldId });
 
-      const newDate = new Date().toISOString();
+      const timestamp = new Date().toISOString();
       const id = uuidv4();
 
       try {
@@ -95,7 +96,9 @@ export default (router: Router) => {
             isCustom: opt.isCustom,
           })),
           order: 4, // Default order
-          createdAt: newDate,
+          createdAt: timestamp,
+          isDailyAction: isDailyAction || false,
+          // lastTriggeredDate is undefined initially
         };
 
         routeLogger.debug("Creating action in DynamoDB", {
@@ -269,6 +272,27 @@ export default (router: Router) => {
           valuesCount: journalEntry.values.length,
         });
         await saveJournalEntry(res.locals.user.sub, dateString, journalEntry);
+
+        // 8. If this is a daily action, update lastTriggeredDate
+        if (action.isDailyAction) {
+          routeLogger.debug("Updating lastTriggeredDate for daily action");
+
+          await updateItem(
+            process.env.DYNAMODB_TABLE_NAME!,
+            {
+              PK: `USER#${res.locals.user.sub}#ACTIONS`,
+              SK: `ACTION#${id}`,
+            },
+            {
+              lastTriggeredDate: dateString, // TODO: mismatch with users timezone!
+              updatedAt: newDate,
+            }
+          );
+
+          routeLogger.debug("Updated lastTriggeredDate successfully", {
+            date: dateString,
+          });
+        }
 
         routeLogger.info("Action registered successfully");
         res.status(200).send({ success: true });

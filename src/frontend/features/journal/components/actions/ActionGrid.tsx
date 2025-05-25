@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -9,6 +9,8 @@ import {
   useMediaQuery,
   Tooltip,
   IconButton,
+  Alert,
+  Snackbar,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
@@ -41,17 +43,81 @@ const ActionGrid: React.FC<ActionGridProps> = ({
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
+  // Add toast state
+  const [toastState, setToastState] = useState<{
+    open: boolean;
+    actionName: string;
+    actionId: string;
+    value?: number;
+    timeLeft: number;
+  }>({
+    open: false,
+    actionName: "",
+    actionId: "",
+    timeLeft: 0,
+  });
+
   const {
     actions,
     loading,
     error,
     createAction,
     getEligibleFields,
-    registerAction,
+    registerAction: originalRegisterAction, // Rename to distinguish
     deleteAction,
     getActionDetails,
     refreshActions,
+    isActionCompletedToday,
   } = useJournalActions(date, structure, entry, refreshEntry);
+
+  // Toast timer effect
+  useEffect(() => {
+    if (!toastState.open) return;
+
+    const timer = setInterval(() => {
+      setToastState((prev) => {
+        if (prev.timeLeft <= 100) {
+          // Auto-confirm when time runs out
+          if (prev.actionId) {
+            originalRegisterAction(prev.actionId, prev.value);
+          }
+          return { ...prev, open: false, timeLeft: 0 };
+        }
+        return { ...prev, timeLeft: prev.timeLeft - 100 };
+      });
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, [toastState.open, originalRegisterAction]);
+
+  // Override the registerAction function to show toast first
+  const registerAction = useCallback(
+    async (actionId: string, value?: number) => {
+      const action = actions.find((a) => a.id === actionId);
+      if (!action) return false;
+
+      // If it's a daily action that's already completed today, don't proceed
+      if (action.isDailyAction && isActionCompletedToday(action)) {
+        return false;
+      }
+
+      // Show toast
+      setToastState({
+        open: true,
+        actionName: action.name,
+        actionId,
+        value,
+        timeLeft: 3000,
+      });
+
+      return true;
+    },
+    [actions, isActionCompletedToday]
+  );
+
+  const handleToastCancel = useCallback(() => {
+    setToastState((prev) => ({ ...prev, open: false }));
+  }, []);
 
   // Sort actions by order property (if available)
   const sortedActions = [...actions].sort((a, b) => {
@@ -205,7 +271,10 @@ const ActionGrid: React.FC<ActionGridProps> = ({
                   registerAction={registerAction}
                   deleteAction={deleteAction}
                   getActionDetails={getActionDetails}
-                  showDeleteButton={!hasMoreActions} // Only show delete buttons if we're not in condensed view
+                  showDeleteButton={!hasMoreActions}
+                  isCompletedToday={
+                    action.isDailyAction && isActionCompletedToday(action)
+                  }
                 />
               </Box>
             ))}
@@ -221,6 +290,44 @@ const ActionGrid: React.FC<ActionGridProps> = ({
         getEligibleFields={getEligibleFields}
         existingActions={actions}
       />
+
+      {/* Toast Notification */}
+      <Snackbar
+        open={toastState.open}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+        sx={{ top: "20px !important" }}
+      >
+        <Alert
+          severity="info"
+          action={
+            <Button color="inherit" size="small" onClick={handleToastCancel}>
+              Cancel
+            </Button>
+          }
+          sx={{ minWidth: "300px" }}
+        >
+          {toastState.actionName} action pressed
+          <Box sx={{ width: "100%", mt: 1 }}>
+            <Box
+              sx={{
+                height: 4,
+                backgroundColor: "rgba(255,255,255,0.3)",
+                borderRadius: 2,
+                overflow: "hidden",
+              }}
+            >
+              <Box
+                sx={{
+                  height: "100%",
+                  backgroundColor: "primary.main",
+                  width: `${((3000 - toastState.timeLeft) / 3000) * 100}%`,
+                  transition: "width 0.1s linear",
+                }}
+              />
+            </Box>
+          </Box>
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

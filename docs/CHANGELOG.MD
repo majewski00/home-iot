@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.2.0 - 2025-05-25
+
+### Added
+
+- Implementation of safe deletion
+- Pop-up after Action is pressed to be able to cancel
+- Daily Action
+
 ## 0.1.3 - 2025-05-24
 
 ### Added

@@ -34,8 +34,14 @@ export const fetchFirstEntryDate = async (): Promise<{ date: string }> =>
 
 // journal/structure.ts
 
-export const fetchJournalStructure = async (): Promise<Journal> =>
-  getJson(ROUTES.JOURNAL_FETCH_STRUCTURE, {}, {}, {}, { cacheBust: true });
+export const fetchJournalStructure = async (date: string): Promise<Journal> =>
+  getJson(
+    ROUTES.JOURNAL_FETCH_STRUCTURE,
+    { date },
+    {},
+    {},
+    { cacheBust: true }
+  );
 
 export const saveJournalStructure = async (
   journal: JournalSaveStructureBody

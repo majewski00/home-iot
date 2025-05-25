@@ -22,6 +22,12 @@ export interface JournalSaveEntryBody {
 
 export interface JournalSaveStructureBody {
   groups: Group[];
+  deletedElements?: {
+    groups?: string[];
+    fields?: string[];
+    fieldTypes?: string[];
+  };
+  currentDate: string; // YYYY-MM-DD format
 }
 
 // Action API types
@@ -34,6 +40,7 @@ export interface JournalAddActionBody {
     increment?: number;
     isCustom?: boolean;
   }[];
+  isDailyAction?: boolean;
 }
 
 export interface JournalRemoveActionBody {
