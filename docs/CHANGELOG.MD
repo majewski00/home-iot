@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.2.2 - 2025-06-07
+
+### Added
+
+- Validation of actions against journal structure to ensure referenced fields and field types exist.
+- Toast notification for actions with a cancel option to prevent accidental registration.
+- Support for configuring default values, minimum/maximum values, and unit labels for `NumberNavigationField`.
+- Static preview section for field configuration in edit view.
+- "Quick Fill" button to copy yesterday's journal values into today's entry.
+
+### Changed
+
+- Improved drag-and-drop functionality for fields and groups in `EditPage`.
+- Enhanced loading state indicators for better user experience.
+- Actions visibility restricted to today's journal entry for relevance.
+- Increment/decrement buttons in `NumberNavigationFieldView` now respect value bounds.
+- Refactored SSL certificate path in `vite.config.ts` for local development.
+
+### Fixed
+
+- Input validation for `NumberNavigationFieldView` to ensure values stay within allowed range.
+- Collapse component rendering logic to avoid unnecessary UI elements.
+
 ## 0.2.1 - 2025-05-25
 
 ### Added

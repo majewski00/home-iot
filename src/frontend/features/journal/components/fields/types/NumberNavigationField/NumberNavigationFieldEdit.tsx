@@ -289,3 +289,5 @@ const NumberNavigationFieldEdit: React.FC<NumberNavigationFieldEditProps> = ({
 };
 
 export default NumberNavigationFieldEdit;
+
+// todo: fix this error: Using kebab-case for css properties in objects is not supported. Did you mean WebkitTextFillColor?

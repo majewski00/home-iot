@@ -102,31 +102,31 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
         )}
       </Box>
 
-      <Collapse in={expanded} timeout="auto" unmountOnExit>
-        <Box sx={{ mt: 2, pl: 1 }}>
-          {otherFieldTypes.map((fieldType) => {
-            const fieldValue = values.find(
-              (v) => v.fieldTypeId === fieldType.id
-            );
-            // FieldTypeFactory will now always be rendered based on the field's structure.
-            // If a specific fieldValue doesn't exist for a fieldType,
-            // null will be passed as the value prop to FieldTypeFactory.
+      {/* Only render Collapse if there are other field types to show */}
+      {otherFieldTypes.length > 0 && (
+        <Collapse in={expanded} timeout="auto" unmountOnExit>
+          <Box sx={{ mt: 2, pl: 1 }}>
+            {otherFieldTypes.map((fieldType) => {
+              const fieldValue = values.find(
+                (v) => v.fieldTypeId === fieldType.id
+              );
 
-            return (
-              <FieldTypeFactory
-                key={fieldType.id}
-                fieldType={fieldType}
-                value={fieldValue ? fieldValue.value : null}
-                onChange={(newValue) =>
-                  handleFieldTypeValueChange(fieldType, newValue)
-                }
-                mode="view"
-                selectedDate={selectedDate}
-              />
-            );
-          })}
-        </Box>
-      </Collapse>
+              return (
+                <FieldTypeFactory
+                  key={fieldType.id}
+                  fieldType={fieldType}
+                  value={fieldValue ? fieldValue.value : null}
+                  onChange={(newValue) =>
+                    handleFieldTypeValueChange(fieldType, newValue)
+                  }
+                  mode="view"
+                  selectedDate={selectedDate}
+                />
+              );
+            })}
+          </Box>
+        </Collapse>
+      )}
     </Paper>
   );
 };

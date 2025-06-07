@@ -208,3 +208,5 @@ const NumberNavigationFieldView: React.FC<NumberNavigationFieldViewProps> = ({
 };
 
 export default NumberNavigationFieldView;
+
+// TODO: fix this sing kebab-case for css properties in objects is not supported. Did you mean MozAppearance?

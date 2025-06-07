@@ -65,7 +65,7 @@ import FieldTypeFactory from "./fields/FieldTypeFactory";
  * Receives structure and methods as props.
  */
 interface EditPageContentProps {
-  structure: Journal;
+  structure: Journal | null;
   isLoading: boolean;
   error: string | null;
   hasChanges: boolean;

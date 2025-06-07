@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Box,
@@ -123,23 +123,26 @@ const JournalPage: React.FC = () => {
     }
   };
 
-  const isToday = selectedDate === new Date().toISOString().split("T")[0];
+  const isToday = useMemo(() => {
+    const today = new Date().toISOString().split("T")[0];
+    return selectedDate === today;
+  }, [selectedDate]);
 
-  if (isLoadingStructure) {
-    return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="80vh"
-      >
-        <CircularProgress />
-        <Typography variant="h6" ml={2}>
-          Loading journal structure...
-        </Typography>
-      </Box>
-    );
-  }
+  // if (isLoadingStructure) {
+  //   return (
+  //     <Box
+  //       display="flex"
+  //       justifyContent="center"
+  //       alignItems="center"
+  //       minHeight="80vh"
+  //     >
+  //       <CircularProgress />
+  //       <Typography variant="h6" ml={2}>
+  //         Loading journal structure...
+  //       </Typography>
+  //     </Box>
+  //   );
+  // }
 
   if (structureError) {
     return (
@@ -156,7 +159,7 @@ const JournalPage: React.FC = () => {
     );
   }
 
-  if (!structure) {
+  if (!structure && !isLoadingStructure) {
     return (
       <Container maxWidth="md">
         <Box py={4} textAlign="center">
@@ -204,21 +207,21 @@ const JournalPage: React.FC = () => {
     );
   }
 
-  if (isLoadingEntry) {
-    return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="80vh"
-      >
-        <CircularProgress />
-        <Typography variant="h6" ml={2}>
-          Loading journal entry...
-        </Typography>
-      </Box>
-    );
-  }
+  // if (isLoadingEntry) {
+  //   return (
+  //     <Box
+  //       display="flex"
+  //       justifyContent="center"
+  //       alignItems="center"
+  //       minHeight="80vh"
+  //     >
+  //       <CircularProgress />
+  //       <Typography variant="h6" ml={2}>
+  //         Loading journal entry...
+  //       </Typography>
+  //     </Box>
+  //   );
+  // }
 
   if (entryError) {
     return (
@@ -236,7 +239,7 @@ const JournalPage: React.FC = () => {
   }
 
   return (
-    <Container maxWidth="md">
+    <Container maxWidth="md" sx={{ py: 4 }}>
       <Box py={4}>
         <Box
           display="flex"
@@ -295,36 +298,18 @@ const JournalPage: React.FC = () => {
           onDateChange={handleDateChange}
         />
         {/* // TODO: The error creates the unnecessary space -  create a context for error's tosters*/}
-        {/* <Fade in={saveSuccess}>
-          <Alert
-            severity="success"
-            sx={{ mt: 2, mb: 2 }}
-            onClose={() => setSaveSuccess(false)}
-          >
-            Journal entry saved successfully!
-          </Alert>
-        </Fade>
 
-        <Fade in={saveError}>
-          <Alert
-            severity="error"
-            sx={{ mt: 2, mb: 2 }}
-            onClose={() => setSaveError(false)}
-          >
-            Failed to save journal entry. Please try again.
-          </Alert>
-        </Fade> */}
-
-        {entry && !isEditMode && (
+        {isToday && entry && !isEditMode && (
           <ActionGrid
             date={selectedDate}
             structure={structure}
             entry={entry}
+            isStructureLoading={isLoadingStructure || isLoadingEntry}
             refreshEntry={refreshEntry}
           />
         )}
 
-        {entry && (
+        {entry && structure && !isLoadingStructure && !isLoadingEntry && (
           <Paper
             elevation={0}
             sx={{
@@ -378,6 +363,19 @@ const JournalPage: React.FC = () => {
               </Button>
             </Box>
           </Paper>
+        )}
+        {isLoadingStructure && isLoadingEntry && (
+          <Box
+            display="flex"
+            justifyContent="center"
+            alignItems="center"
+            minHeight="80vh"
+          >
+            <CircularProgress />
+            <Typography variant="h6" ml={2}>
+              Loading journal...
+            </Typography>
+          </Box>
         )}
       </Box>
     </Container>

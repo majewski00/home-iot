@@ -28,6 +28,7 @@ interface ActionGridProps {
   date: string;
   structure?: Journal | null;
   entry?: JournalEntry | null;
+  isStructureLoading: boolean;
   refreshEntry?: () => Promise<void>;
 }
 
@@ -35,6 +36,7 @@ const ActionGrid: React.FC<ActionGridProps> = ({
   date,
   structure,
   entry,
+  isStructureLoading,
   refreshEntry,
 }) => {
   const theme = useTheme();
@@ -157,7 +159,7 @@ const ActionGrid: React.FC<ActionGridProps> = ({
     handleCloseCreateModal();
   };
 
-  if (loading) {
+  if (loading || isStructureLoading) {
     return (
       <Box sx={{ mt: 2, p: 2 }}>
         <Typography>Loading actions...</Typography>

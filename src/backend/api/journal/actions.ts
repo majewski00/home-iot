@@ -48,10 +48,75 @@ export default (router: Router) => {
           "ACTION#"
         );
 
-        routeLogger.info("Successfully fetched actions", {
-          count: actions.length,
+        // Get current journal structure to validate field types
+        routeLogger.debug("Fetching journal structure for validation");
+        const journalStructure = await getJournalStructure(res.locals.user.sub);
+
+        if (!journalStructure) {
+          routeLogger.warn("No journal structure found");
+          // If no structure exists, return empty actions array
+          res.status(200).send([]);
+          return;
+        }
+
+        // Create a set of valid field IDs and field type IDs for quick lookup
+        const validFieldIds = new Set<string>();
+        const validFieldTypeIds = new Set<string>();
+
+        journalStructure.groups.forEach((group) => {
+          group.fields.forEach((field) => {
+            validFieldIds.add(field.id);
+            field.fieldTypes.forEach((fieldType) => {
+              validFieldTypeIds.add(fieldType.id);
+            });
+          });
         });
-        res.status(200).send(actions.map((action) => stripBaseItem(action)));
+
+        // Filter actions to only include those with valid field references
+        const validActions = actions.filter((action) => {
+          const actionData = stripBaseItem(action);
+
+          // Check if the field still exists
+          if (!validFieldIds.has(actionData.fieldId)) {
+            routeLogger.warn("Action references non-existent field", {
+              actionId: actionData.id,
+              actionName: actionData.name,
+              fieldId: actionData.fieldId,
+            });
+            return false;
+          }
+
+          // Check if action has options with field type references
+          if (actionData.options && actionData.options.length > 0) {
+            const hasValidFieldTypes = actionData.options.every((option) =>
+              validFieldTypeIds.has(option.fieldTypeId)
+            );
+
+            if (!hasValidFieldTypes) {
+              routeLogger.warn("Action references non-existent field type", {
+                actionId: actionData.id,
+                actionName: actionData.name,
+                options: actionData.options.map((opt) => ({
+                  fieldTypeId: opt.fieldTypeId,
+                  exists: validFieldTypeIds.has(opt.fieldTypeId),
+                })),
+              });
+              return false;
+            }
+          }
+
+          return true;
+        });
+
+        routeLogger.info("Successfully fetched and validated actions", {
+          totalCount: actions.length,
+          validCount: validActions.length,
+          filteredCount: actions.length - validActions.length,
+        });
+
+        res
+          .status(200)
+          .send(validActions.map((action) => stripBaseItem(action)));
       } catch (error) {
         routeLogger.error("Failed to fetch actions", { error });
         res.status(500).send({
@@ -224,10 +289,14 @@ export default (router: Router) => {
         );
 
         if (!field) {
-          routeLogger.warn("Field not found in structure", {
+          routeLogger.warn("Action field not found in current structure", {
             fieldId: action.fieldId,
+            actionId: id,
           });
-          res.status(404).send({ message: "Field not found in structure." });
+          res.status(400).send({
+            message:
+              "Action field no longer exists in current journal structure. Please update or delete this action.",
+          });
           return;
         }
 

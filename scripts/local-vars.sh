@@ -1,4 +1,4 @@
-export AWS_PROFILE=HomeIoT-profile
+export AWS_PROFILE=Home-IoT-dev
 export AWS_REGION=eu-central-1
 export SERVICE=home-iot-kg8odn4c
 export BUILD_STAGE=dev
