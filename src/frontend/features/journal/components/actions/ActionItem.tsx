@@ -30,7 +30,6 @@ const ActionItem: React.FC<ActionItemProps> = ({
   isCompletedToday = false,
 }) => {
   const [isNumberModalOpen, setIsNumberModalOpen] = useState(false);
-  const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 

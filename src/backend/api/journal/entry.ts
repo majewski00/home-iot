@@ -17,6 +17,14 @@ import {
 } from "@src-types/journal/api.types";
 import logger from "../utils/logger";
 
+/**
+ * Converts a date to YYYY-MM-DD format
+ */
+const toDateString = (date: Date | string): string => {
+  const d = new Date(date);
+  return d.toISOString().split("T")[0];
+};
+
 export default (router: Router) => {
   // * Save new/updated journal entry
   router.post(
@@ -66,31 +74,52 @@ export default (router: Router) => {
       // Get active structure to assign structureId
       let activeStructureId: string;
       try {
-        routeLogger.debug("Fetching active structure for structureId");
-        const structures = await queryItems<
-          { structureId: string; isActive: boolean } & BaseItem
-        >(
+        routeLogger.debug("Fetching appropriate structure for entry date");
+        const targetDate = toDateString(req.body.date);
+        const structures = await queryItems<Journal & BaseItem>(
           process.env.DYNAMODB_TABLE_NAME!,
           `USER#${res.locals.user.sub}#STRUCTURE`,
           "STRUCTURE#"
         );
 
-        const activeStructure = structures?.find((s) => s.isActive);
-        if (!activeStructure) {
-          routeLogger.error("No active structure found");
+        if (!structures || structures.length === 0) {
+          routeLogger.error("No structures found");
           res.status(400).send({
             message:
-              "No active journal structure found. Please create a structure first.",
+              "No journal structure found. Please create a structure first.",
           });
           return;
         }
 
-        activeStructureId = activeStructure.structureId;
-        routeLogger.debug("Active structure found", {
+        let applicableStructure: Journal & BaseItem;
+
+        if (structures.length === 1) {
+          applicableStructure = structures[0];
+        } else {
+          // Sort structures by effectiveFrom date (newest first)
+          const sortedStructures = structures.sort((a, b) => {
+            const dateA = a.effectiveFrom as string;
+            const dateB = b.effectiveFrom as string;
+            return dateB.localeCompare(dateA);
+          });
+
+          // Find the first structure that was effective before or on the target date
+          const found = sortedStructures.find((s) => {
+            const effectiveDate = s.effectiveFrom as string;
+            return effectiveDate <= targetDate;
+          });
+
+          applicableStructure =
+            found || sortedStructures[sortedStructures.length - 1];
+        }
+
+        activeStructureId = applicableStructure.structureId;
+        routeLogger.debug("Applicable structure found", {
           structureId: activeStructureId,
+          effectiveFrom: applicableStructure.effectiveFrom,
         });
       } catch (error) {
-        routeLogger.error("Failed to fetch active structure", { error });
+        routeLogger.error("Failed to fetch structure", { error });
         res.status(500).send({
           message: "Failed to fetch journal structure.",
           error: error as string,

@@ -87,6 +87,13 @@ export interface ActionOption {
   increment?: number; // Increment value for the operation
   isCustom?: boolean; // Indicates if the operation is custom
 }
+export interface ActionValidation {
+  isValid: boolean;
+  invalidReason?: string;
+  missingFieldId?: string;
+  missingFieldTypeId?: string;
+}
+
 export interface Action {
   id: string;
   name: string;
@@ -94,7 +101,9 @@ export interface Action {
   fieldId: string;
   options?: ActionOption[];
   createdAt: Date | string;
+  updatedAt: Date | string;
   order: number;
   isDailyAction?: boolean;
   lastTriggeredDate?: string;
+  _validation?: ActionValidation;
 }

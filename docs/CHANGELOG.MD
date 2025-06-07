@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.2.3 - 2025-06-07
+
+### Added
+
+- Comprehensive validation for `Action` objects against the current `Journal` structure, impacting `actions.ts`, `useJournalActions.ts`, and `journal.types.ts`.
+- Frontend display of invalid actions in a dedicated section on `AllActionsPage.tsx`, including an option for bulk deletion.
+
+### Changed
+
+- Backend API endpoints in `actions.ts` now incorporate and return action validation status.
+- Frontend components (`ActionGrid.tsx`, `AllActionsPage.tsx`) and hooks (`useJournalActions.ts`) updated to handle and display actions based on their validity.
+- Enhanced logic in `actions.ts` and `entry.ts` for selecting the appropriate `Journal` structure based on its `effectiveFrom` date.
+- Refined helper functions within `actions.ts` for processing and registering action values.
+
+### Fixed
+
+- Prevented registration of actions that are invalid due to journal structure changes, primarily in `actions.ts` and `useJournalActions.ts`.
+- Ensured action reordering on `AllActionsPage.tsx` correctly applies only to valid actions.
+
 ## 0.2.2 - 2025-06-07
 
 ### Added

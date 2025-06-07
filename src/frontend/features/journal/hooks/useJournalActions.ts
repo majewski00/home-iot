@@ -7,6 +7,7 @@ import {
   FieldTypeKind,
   Journal,
   JournalEntry,
+  ActionValidation,
 } from "@src-types/journal/journal.types";
 
 export interface UseJournalActionsReturn {
@@ -44,6 +45,7 @@ export interface UseJournalActionsReturn {
     currentValue: any;
     incrementValue?: number;
     isCustom: boolean;
+    validation?: ActionValidation; // Add validation to details
   } | null;
   refreshActions: () => Promise<void>;
 }
@@ -57,6 +59,7 @@ export const useJournalActions = (
   const [actions, setActions] = useState<Action[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rawActions, setRawActions] = useState<Action[]>([]); // Store raw actions before validation
 
   // Use external structure if provided, otherwise fetch it
   const { structure } =
@@ -75,7 +78,7 @@ export const useJournalActions = (
     try {
       setLoading(true);
       const fetchedActions = await journalApi.fetchActions();
-      setActions(fetchedActions);
+      setRawActions(fetchedActions); // Store raw actions
       setError(null);
     } catch (err) {
       setError("Failed to fetch actions");
@@ -85,9 +88,87 @@ export const useJournalActions = (
     }
   }, []);
 
+  // Effect to validate actions when rawActions or structure changes
+  useEffect(() => {
+    if (!structure || rawActions.length === 0) {
+      // If structure is not loaded or no raw actions, set actions to rawActions (or empty if structure is missing)
+      // This ensures that if structure is null, actions are still populated but will be marked invalid.
+      setActions(
+        rawActions.map((action) => {
+          if (!structure) {
+            return {
+              ...action,
+              _validation: {
+                isValid: false,
+                invalidReason: "Journal structure not available.",
+              },
+            };
+          }
+          return action; // Should be validated below if structure exists
+        })
+      );
+      if (rawActions.length > 0 && !loading) setLoading(false); // Ensure loading is false if we have actions
+      return;
+    }
+
+    setLoading(true);
+    const validatedActions = rawActions.map((action): Action => {
+      const validation: ActionValidation = { isValid: true };
+
+      const field = structure.groups
+        .flatMap((g) => g.fields)
+        .find((f) => f.id === action.fieldId);
+
+      if (!field) {
+        validation.isValid = false;
+        validation.invalidReason = `Field with ID '${action.fieldId}' not found in the current journal structure.`;
+        validation.missingFieldId = action.fieldId;
+      } else if (action.options && action.options.length > 0) {
+        const actionFieldTypeId = action.options[0].fieldTypeId;
+        const fieldType = field.fieldTypes.find(
+          (ft) => ft.id === actionFieldTypeId
+        );
+        if (!fieldType) {
+          validation.isValid = false;
+          validation.invalidReason = `FieldType with ID '${actionFieldTypeId}' not found for field '${field.name}'.`;
+          validation.missingFieldId = action.fieldId;
+          validation.missingFieldTypeId = actionFieldTypeId;
+        }
+      }
+      // If action.options is empty or undefined, it might be an old action or an error.
+      // For now, we assume if fieldId is valid, and no options, it's okay,
+      // but this could be a point for further validation if options are mandatory.
+
+      return { ...action, _validation: validation };
+    });
+
+    setActions(validatedActions);
+    setLoading(false);
+  }, [rawActions, structure, loading]);
+
   // Register an action
   const registerAction = useCallback(
     async (actionId: string, value?: number) => {
+      const actionToRegister = actions.find((a) => a.id === actionId);
+      if (!actionToRegister) {
+        console.error("Action not found for registration:", actionId);
+        return false;
+      }
+
+      if (
+        actionToRegister._validation &&
+        !actionToRegister._validation.isValid
+      ) {
+        setError(
+          `Cannot register action '${actionToRegister.name}': ${actionToRegister._validation.invalidReason}`
+        );
+        console.error(
+          "Action is invalid:",
+          actionToRegister._validation.invalidReason
+        );
+        return false;
+      }
+
       try {
         await journalApi.registerAction(actionId, value);
         // Refresh the journal entry to reflect the changes
@@ -98,7 +179,7 @@ export const useJournalActions = (
         return false;
       }
     },
-    [refreshEntry]
+    [refreshEntry, actions]
   );
 
   // Create a new action
@@ -129,7 +210,8 @@ export const useJournalActions = (
           ],
           isDailyAction: isDailyAction || false,
         });
-        setActions((prev) => [...prev, newAction]);
+        // Add the new action to rawActions, validation will occur in useEffect
+        setRawActions((prev) => [...prev, newAction]);
         return newAction;
       } catch (err) {
         console.error("Error creating action:", err);
@@ -143,7 +225,7 @@ export const useJournalActions = (
   const deleteAction = useCallback(async (actionId: string) => {
     try {
       await journalApi.removeAction(actionId);
-      setActions((prev) => prev.filter((action) => action.id !== actionId));
+      setRawActions((prev) => prev.filter((action) => action.id !== actionId)); // Update rawActions
       return true;
     } catch (err) {
       console.error("Error deleting action:", err);
@@ -155,8 +237,10 @@ export const useJournalActions = (
   const updateActionOrder = useCallback(
     async (actionId: string, newOrder: number) => {
       try {
-        // Find the action to update
-        const actionToUpdate = actions.find((action) => action.id === actionId);
+        // Find the action to update in rawActions
+        const actionToUpdate = rawActions.find(
+          (action) => action.id === actionId
+        );
         if (!actionToUpdate) return false;
 
         // Call the API to update the action order in the backend
@@ -168,12 +252,13 @@ export const useJournalActions = (
           order: newOrder,
         };
 
-        // Update the actions array locally
-        setActions((prev) =>
+        // Update the rawActions array locally
+        setRawActions((prev) =>
           prev.map((action) =>
             action.id === actionId ? updatedAction : action
           )
         );
+        // Validation will re-run due to rawActions change
 
         return true;
       } catch (err) {
@@ -181,7 +266,7 @@ export const useJournalActions = (
         return false;
       }
     },
-    [actions]
+    [rawActions] // Depend on rawActions
   );
 
   // Get eligible fields for actions (NUMBER, NUMBER_NAVIGATION, TIME_SELECT, or CHECK if it's the only type)
@@ -240,6 +325,18 @@ export const useJournalActions = (
   const getActionDetails = useCallback(
     (action: Action) => {
       if (!structure) return null;
+      if (action._validation && !action._validation.isValid) {
+        // Return minimal details for invalid actions, including validation info
+        return {
+          fieldName: "Invalid Action",
+          fieldTypeName:
+            action._validation.invalidReason || "Configuration issue",
+          fieldTypeKind: null,
+          currentValue: null,
+          isCustom: false,
+          validation: action._validation,
+        };
+      }
 
       let fieldName = "";
       let fieldTypeName = "";
@@ -295,6 +392,7 @@ export const useJournalActions = (
           action.options && action.options.length > 0
             ? action.options[0].isCustom ?? false // Ensure isCustom is always a boolean
             : false,
+        validation: action._validation, // Include validation details
       };
     },
     [structure, entry]
@@ -321,7 +419,7 @@ export const useJournalActions = (
     updateActionOrder,
     getEligibleFields,
     getActionDetails,
-    refreshActions: fetchActions,
+    refreshActions: fetchActions, // fetchActions will trigger re-validation via rawActions update
     isActionCompletedToday,
   };
 };

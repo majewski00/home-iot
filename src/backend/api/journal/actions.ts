@@ -11,8 +11,9 @@ import {
 import * as ROUTES from "@apiRoutes";
 import {
   Action,
-  FieldValue,
   JournalEntry,
+  Journal,
+  Field,
 } from "@src-types/journal/journal.types";
 import {
   Locals,
@@ -24,14 +25,97 @@ import {
 } from "@src-types/journal/api.types";
 import logger from "../utils/logger";
 
+// Helper Interfaces for Validation
+interface ActionValidation {
+  isValid: boolean;
+  invalidReason?: string;
+  missingFieldId?: string;
+  missingFieldTypeId?: string;
+}
+
+interface ActionWithValidation extends Action {
+  _validation?: ActionValidation;
+}
+
+/**
+ * Validates if an action (or its constituent parts) is compatible with the current journal structure.
+ */
+function validateActionAgainstStructure(
+  action: Pick<Action, "fieldId" | "options" | "name">, // Accept partial action for flexibility
+  structure: Journal
+): ActionValidation {
+  if (!structure || !structure.groups) {
+    return {
+      isValid: false,
+      invalidReason: "Journal structure not found or invalid.",
+    };
+  }
+
+  let fieldExists = false;
+  let fieldTypeExists = false; // Assume true if no options requiring specific fieldType
+  let foundFieldName = "";
+
+  for (const group of structure.groups) {
+    const field = group.fields.find((f) => f.id === action.fieldId);
+    if (field) {
+      fieldExists = true;
+      foundFieldName = field.name;
+      if (action.options && action.options.length > 0) {
+        const actionFieldTypeId = action.options[0].fieldTypeId;
+        fieldTypeExists = field.fieldTypes.some(
+          (ft) => ft.id === actionFieldTypeId
+        );
+      } else {
+        // If action has no options, it might be a generic action for a field (e.g. a CHECK type)
+        // For now, if field exists and no specific fieldType is targeted by options, consider it valid at field level.
+        fieldTypeExists = true;
+      }
+      break;
+    }
+  }
+
+  if (!fieldExists) {
+    return {
+      isValid: false,
+      invalidReason: `Associated field (ID: ${action.fieldId}) no longer exists in the current journal structure.`,
+      missingFieldId: action.fieldId,
+    };
+  }
+
+  if (!fieldTypeExists && action.options && action.options.length > 0) {
+    return {
+      isValid: false,
+      invalidReason: `Associated field type (ID: ${action.options[0].fieldTypeId}) for field "${foundFieldName}" (ID: ${action.fieldId}) no longer exists.`,
+      missingFieldId: action.fieldId,
+      missingFieldTypeId: action.options[0].fieldTypeId,
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Converts a date to YYYY-MM-DD format
+ */
+const toDateString = (date: Date | string): string => {
+  const d = new Date(date);
+  return d.toISOString().split("T")[0];
+};
+
+/**
+ * Gets current date in YYYY-MM-DD format
+ */
+const getCurrentDateString = (): string => {
+  return toDateString(new Date());
+};
+
 export default (router: Router) => {
   // * Fetch all actions for a user
-  // TODO: Check if the associated FieldType exists in the present journal structure
   router.get(
     ROUTES.JOURNAL_FETCH_ACTIONS,
     async (
-      _req: Request<{}, Action[], {}, {}>,
-      res: Response<Action[] | ErrorResponse, Locals>
+      _req: Request<{}, ActionWithValidation[], {}, {}>, // Updated response type
+      res: Response<ActionWithValidation[] | ErrorResponse, Locals> // Updated response type
     ) => {
       const routeLogger = logger.withContext({
         route: ROUTES.JOURNAL_FETCH_ACTIONS,
@@ -42,81 +126,95 @@ export default (router: Router) => {
 
       try {
         routeLogger.debug("Querying DynamoDB for actions");
-        const actions = await queryItems<Action & BaseItem>(
+        const actionsFromDb = await queryItems<Action & BaseItem>(
           process.env.DYNAMODB_TABLE_NAME!,
           `USER#${res.locals.user.sub}#ACTIONS`,
           "ACTION#"
         );
 
-        // Get current journal structure to validate field types
         routeLogger.debug("Fetching journal structure for validation");
         const journalStructure = await getJournalStructure(res.locals.user.sub);
 
         if (!journalStructure) {
-          routeLogger.warn("No journal structure found");
-          // If no structure exists, return empty actions array
-          res.status(200).send([]);
+          routeLogger.warn(
+            "No journal structure found. Returning actions without full validation, marked as potentially invalid."
+          );
+          const actionsToReturn = actionsFromDb.map((actionWithBase) => {
+            const strippedAction = stripBaseItem(actionWithBase);
+            return {
+              ...strippedAction,
+              _validation: {
+                isValid: false, // Mark as invalid if structure is missing
+                invalidReason: "Journal structure not found for validation.",
+              },
+            };
+          });
+          res.status(200).send(actionsToReturn);
           return;
         }
 
-        // Create a set of valid field IDs and field type IDs for quick lookup
-        const validFieldIds = new Set<string>();
-        const validFieldTypeIds = new Set<string>();
-
-        journalStructure.groups.forEach((group) => {
-          group.fields.forEach((field) => {
-            validFieldIds.add(field.id);
-            field.fieldTypes.forEach((fieldType) => {
-              validFieldTypeIds.add(fieldType.id);
-            });
-          });
-        });
-
-        // Filter actions to only include those with valid field references
-        const validActions = actions.filter((action) => {
-          const actionData = stripBaseItem(action);
-
-          // Check if the field still exists
-          if (!validFieldIds.has(actionData.fieldId)) {
-            routeLogger.warn("Action references non-existent field", {
-              actionId: actionData.id,
-              actionName: actionData.name,
-              fieldId: actionData.fieldId,
-            });
-            return false;
-          }
-
-          // Check if action has options with field type references
-          if (actionData.options && actionData.options.length > 0) {
-            const hasValidFieldTypes = actionData.options.every((option) =>
-              validFieldTypeIds.has(option.fieldTypeId)
+        const validatedActions: ActionWithValidation[] = actionsFromDb.map(
+          (actionWithBase) => {
+            const strippedAction = stripBaseItem(actionWithBase);
+            const validation = validateActionAgainstStructure(
+              strippedAction,
+              journalStructure
             );
-
-            if (!hasValidFieldTypes) {
-              routeLogger.warn("Action references non-existent field type", {
-                actionId: actionData.id,
-                actionName: actionData.name,
-                options: actionData.options.map((opt) => ({
-                  fieldTypeId: opt.fieldTypeId,
-                  exists: validFieldTypeIds.has(opt.fieldTypeId),
-                })),
-              });
-              return false;
-            }
+            return {
+              ...strippedAction,
+              _validation: validation,
+            };
           }
+        );
 
-          return true;
-        });
+        const validCount = validatedActions.filter(
+          (a) => a._validation?.isValid
+        ).length;
+        const invalidCount = validatedActions.length - validCount;
 
         routeLogger.info("Successfully fetched and validated actions", {
-          totalCount: actions.length,
-          validCount: validActions.length,
-          filteredCount: actions.length - validActions.length,
+          totalCount: validatedActions.length,
+          validCount,
+          invalidCount,
         });
 
-        res
-          .status(200)
-          .send(validActions.map((action) => stripBaseItem(action)));
+        if (invalidCount > 0) {
+          routeLogger.warn(
+            "Invalid actions found:",
+            validatedActions
+              .filter((a) => !a._validation?.isValid)
+              .map((a) => ({
+                id: a.id,
+                name: a.name,
+                reason: a._validation?.invalidReason,
+              }))
+          );
+        }
+
+        // Add debug log to verify response structure
+        routeLogger.debug("Response structure verification", {
+          totalActions: validatedActions.length,
+          sampleAction: validatedActions[0]
+            ? {
+                id: validatedActions[0].id,
+                name: validatedActions[0].name,
+                hasValidation: !!validatedActions[0]._validation,
+                isValid: validatedActions[0]._validation?.isValid,
+                invalidReason: validatedActions[0]._validation?.invalidReason,
+              }
+            : null,
+          invalidActionsWithValidation: validatedActions
+            .filter((a) => !a._validation?.isValid)
+            .map((a) => ({
+              id: a.id,
+              name: a.name,
+              hasValidationObject: !!a._validation,
+              isValid: a._validation?.isValid,
+              invalidReason: a._validation?.invalidReason,
+            })),
+        });
+
+        res.status(200).send(validatedActions);
       } catch (error) {
         routeLogger.error("Failed to fetch actions", { error });
         res.status(500).send({
@@ -140,37 +238,79 @@ export default (router: Router) => {
       });
 
       const { name, description, fieldId, options, isDailyAction } = req.body;
-      routeLogger.info("Adding new action", { name, fieldId });
-
-      const timestamp = new Date().toISOString();
-      const id = uuidv4();
+      routeLogger.info("Attempting to add new action", { name, fieldId });
 
       try {
+        routeLogger.debug("Fetching journal structure for validation");
+        const journalStructure = await getJournalStructure(res.locals.user.sub);
+
+        if (!journalStructure) {
+          routeLogger.error(
+            "Journal structure not found. Cannot validate or add action."
+          );
+          res.status(500).send({
+            message:
+              "Journal structure not found. Cannot validate or add action.",
+          });
+          return;
+        }
+
+        // Validate the fieldId and fieldTypeId from input against the current structure
+        const validationInput = {
+          name: name, // For context in validation messages if needed
+          fieldId: fieldId,
+          options: options
+            ? options.map((opt) => ({
+                id: "", // Dummy id for ActionOption
+                fieldTypeId: opt.fieldTypeId,
+                increment: opt.increment,
+                isCustom: opt.isCustom,
+              }))
+            : undefined,
+        };
+        const validation = validateActionAgainstStructure(
+          validationInput,
+          journalStructure
+        );
+
+        if (!validation.isValid) {
+          routeLogger.warn("Validation failed for new action", {
+            name,
+            fieldId,
+            reason: validation.invalidReason,
+          });
+          res.status(400).send({
+            message: `Cannot add action: ${validation.invalidReason}`,
+          });
+          return;
+        }
+
+        routeLogger.debug("New action validation successful");
+
+        const timestamp = new Date().toISOString();
+        const id = uuidv4();
+
         const newAction: Action & BaseItem = {
           PK: `USER#${res.locals.user.sub}#ACTIONS`,
           SK: `ACTION#${id}`,
           userId: res.locals.user.sub,
           id,
           name,
-          description,
+          description: description || "",
           fieldId,
           options: options?.map((opt) => ({
-            id: uuidv4(),
+            id: uuidv4(), // Generate ID for each option
             fieldTypeId: opt.fieldTypeId,
             ...(opt.increment !== undefined && { increment: opt.increment }),
             isCustom: opt.isCustom,
           })),
-          order: 4, // Default order
+          order: Date.now(), // Default order, can be improved
           createdAt: timestamp,
+          updatedAt: timestamp,
           isDailyAction: isDailyAction || false,
-          // lastTriggeredDate is undefined initially
         };
 
-        routeLogger.debug("Creating action in DynamoDB", {
-          actionId: id,
-          optionsCount: options?.length || 0,
-        });
-
+        routeLogger.debug("Creating action in DynamoDB", { actionId: id });
         await putItem(process.env.DYNAMODB_TABLE_NAME!, newAction);
 
         routeLogger.info("Action created successfully", { actionId: id });
@@ -203,7 +343,6 @@ export default (router: Router) => {
 
       try {
         routeLogger.debug("Deleting action from DynamoDB");
-        // Use the deleteItem function to remove the action
         await deleteItem(process.env.DYNAMODB_TABLE_NAME!, {
           PK: `USER#${res.locals.user.sub}#ACTIONS`,
           SK: `ACTION#${id}`,
@@ -238,73 +377,93 @@ export default (router: Router) => {
       routeLogger.info("Registering action", { actionId: id, value });
 
       const today = new Date();
-      const dateString = today.toISOString().split("T")[0]; // Format: YYYY-MM-DD
+      const dateString = today.toISOString().split("T")[0];
       const newDate = today.toISOString();
 
       try {
-        // 1. Get the action details
         routeLogger.debug("Fetching action details");
-        const actions = await queryItems<Action & BaseItem>(
+        const actionsFromDb = await queryItems<Action & BaseItem>(
           process.env.DYNAMODB_TABLE_NAME!,
           `USER#${res.locals.user.sub}#ACTIONS`,
           `ACTION#${id}`
         );
-        const action = actions.length > 0 ? stripBaseItem(actions[0]) : null;
-        if (!action) {
+
+        if (actionsFromDb.length === 0) {
           routeLogger.warn("Action not found", { actionId: id });
           res.status(404).send({ message: "Action not found." });
           return;
         }
+        const action = stripBaseItem(actionsFromDb[0]);
 
-        // 2. Get today's journal entry
-        routeLogger.debug("Getting or creating journal entry", {
-          date: dateString,
-        });
+        routeLogger.debug("Fetching journal structure for validation");
+        const journalStructure = await getJournalStructure(res.locals.user.sub);
+
+        if (!journalStructure) {
+          routeLogger.error(
+            "Journal structure not found. Cannot validate or register action."
+          );
+          res.status(500).send({
+            message:
+              "Journal structure not found. Cannot validate or register action.",
+          });
+          return;
+        }
+
+        const validation = validateActionAgainstStructure(
+          action,
+          journalStructure
+        );
+        if (!validation.isValid) {
+          routeLogger.warn("Action validation failed for registration", {
+            actionId: id,
+            reason: validation.invalidReason,
+          });
+          res.status(400).send({
+            message: `Action "${action.name}" is no longer valid: ${validation.invalidReason}. Please update or delete this action.`,
+          });
+          return;
+        }
+        routeLogger.debug("Action validation successful for registration");
+
+        if (action.isDailyAction && action.lastTriggeredDate === dateString) {
+          routeLogger.warn("Daily action already completed today", {
+            actionId: id,
+          });
+          res.status(400).send({
+            message: `Daily action "${action.name}" has already been completed today.`,
+          });
+          return;
+        }
+
         let journalEntry = await getOrCreateJournalEntry(
           res.locals.user.sub,
           dateString,
           newDate
         );
-        routeLogger.debug("Journal entry retrieved", {
-          isNew: journalEntry.isNewEntry,
-          valuesCount: journalEntry.values.length,
-        });
-
-        // 3. Get journal structure to find field information
-        routeLogger.debug("Fetching journal structure");
-        const journalStructure = await getJournalStructure(res.locals.user.sub);
-        if (!journalStructure) {
-          routeLogger.warn("Journal structure not found");
-          res.status(404).send({ message: "Journal structure not found." });
-          return;
-        }
-
-        // 4. Find the field and its group in the structure
-        routeLogger.debug("Finding field in structure", {
-          fieldId: action.fieldId,
-        });
         const { field, groupId } = findFieldInStructure(
           journalStructure,
           action.fieldId
         );
 
-        if (!field) {
-          routeLogger.warn("Action field not found in current structure", {
-            fieldId: action.fieldId,
-            actionId: id,
-          });
-          res.status(400).send({
+        if (!field || !groupId) {
+          // This guard ensures groupId is a string below
+          routeLogger.error(
+            "Field or GroupId not found in structure despite passing validation. This should not happen.",
+            {
+              fieldId: action.fieldId,
+              actionId: id,
+              fieldFound: !!field,
+              groupIdFound: !!groupId,
+            }
+          );
+          res.status(500).send({
             message:
-              "Action field no longer exists in current journal structure. Please update or delete this action.",
+              "Internal error: Associated field or group information is missing after validation. Please try again or check action configuration.",
           });
           return;
         }
 
-        // 5. Update field values based on action options
         if (action.options && action.options.length > 0) {
-          routeLogger.debug("Processing action with options", {
-            optionsCount: action.options.length,
-          });
           await processActionWithOptions(
             journalEntry,
             action,
@@ -313,9 +472,10 @@ export default (router: Router) => {
             value,
             newDate
           );
+          // Ensure any associated CHECK field type is marked as true
+          // when the action had specific options.
+          await processCheckFieldType(journalEntry, field, groupId, newDate);
         } else {
-          routeLogger.debug("Processing action without options");
-          // If no options, just mark the CHECK field as done
           await processActionWithoutOptions(
             journalEntry,
             action,
@@ -325,27 +485,19 @@ export default (router: Router) => {
           );
         }
 
-        // 6. Check for TIME_SELECT field type and create/update its value
-        routeLogger.debug("Processing time select field");
         await processTimeSelectField(
           journalEntry,
           field,
-          action.fieldId,
-          groupId,
+          // action.fieldId, // Parameter already removed in previous step
+          groupId, // groupId is now guaranteed to be a string here
           newDate
         );
-
-        // 7. Save the updated journal entry
-        routeLogger.debug("Saving journal entry", {
-          date: dateString,
-          valuesCount: journalEntry.values.length,
-        });
         await saveJournalEntry(res.locals.user.sub, dateString, journalEntry);
 
-        // 8. If this is a daily action, update lastTriggeredDate
         if (action.isDailyAction) {
-          routeLogger.debug("Updating lastTriggeredDate for daily action");
-
+          routeLogger.debug("Updating lastTriggeredDate for daily action", {
+            actionId: id,
+          });
           await updateItem(
             process.env.DYNAMODB_TABLE_NAME!,
             {
@@ -353,17 +505,13 @@ export default (router: Router) => {
               SK: `ACTION#${id}`,
             },
             {
-              lastTriggeredDate: dateString, // TODO: mismatch with users timezone!
+              lastTriggeredDate: dateString,
               updatedAt: newDate,
             }
           );
-
-          routeLogger.debug("Updated lastTriggeredDate successfully", {
-            date: dateString,
-          });
         }
 
-        routeLogger.info("Action registered successfully");
+        routeLogger.info("Action registered successfully", { actionId: id });
         res.status(200).send({ success: true });
       } catch (error) {
         routeLogger.error("Failed to register action", { error });
@@ -393,7 +541,6 @@ export default (router: Router) => {
 
       try {
         routeLogger.debug("Updating action order in DynamoDB");
-        // Update the action with the new order
         await updateItem(
           process.env.DYNAMODB_TABLE_NAME!,
           {
@@ -418,10 +565,7 @@ export default (router: Router) => {
     }
   );
 
-  // Helper functions for JOURNAL_REGISTER_ACTION
-  /**
-   * Get or create a journal entry for the specified date
-   */
+  // Helper functions
   async function getOrCreateJournalEntry(
     userId: string,
     dateString: string,
@@ -432,22 +576,19 @@ export default (router: Router) => {
       userId,
       date: dateString,
     });
-
     functionLogger.debug("Fetching journal entry");
     const entries = await queryItems<JournalEntry & BaseItem>(
       process.env.DYNAMODB_TABLE_NAME!,
       `USER#${userId}#ENTRIES`,
       `DATE#${dateString}`
     );
-
     if (entries.length > 0) {
       functionLogger.debug("Existing entry found");
       return { ...stripBaseItem(entries[0]), isNewEntry: false };
     }
-
-    // Create new entry
     functionLogger.debug("No entry found, creating new entry");
     return {
+      structureId: "current", // Assuming default or will be set if structure changes
       date: dateString,
       values: [],
       createdAt: timestamp,
@@ -456,231 +597,282 @@ export default (router: Router) => {
     };
   }
 
-  /**
-   * Get journal structure
-   */
-  async function getJournalStructure(
-    userId: string
-  ): Promise<{ groups: any[] } | null> {
+  async function getJournalStructure(userId: string): Promise<Journal | null> {
     const functionLogger = logger.withContext({
       function: "getJournalStructure",
       userId,
     });
-
     functionLogger.debug("Fetching journal structure");
-    const structures = await queryItems<{ groups: any[] } & BaseItem>(
+
+    const targetDate = getCurrentDateString();
+    functionLogger.debug("Using current date for structure selection", {
+      targetDate,
+    });
+
+    const structures = await queryItems<Journal & BaseItem>(
       process.env.DYNAMODB_TABLE_NAME!,
       `USER#${userId}#STRUCTURE`,
       "STRUCTURE#"
     );
 
     if (structures.length === 0) {
-      functionLogger.debug("No structure found");
+      functionLogger.warn("No journal structures found for user");
       return null;
     }
 
-    functionLogger.debug("Structure found", {
-      groupsCount: structures[0].groups.length,
+    if (structures.length === 1) {
+      functionLogger.debug("Only one structure found, returning it");
+      return stripBaseItem(structures[0]);
+    }
+
+    // Sort structures by effectiveFrom date (newest first)
+    const sortedStructures = structures.sort((a, b) => {
+      const dateA = a.effectiveFrom as string;
+      const dateB = b.effectiveFrom as string;
+      return dateB.localeCompare(dateA);
     });
-    return structures.length > 0 ? structures[0] : null;
+
+    // Find the first structure that was effective before or on the target date
+    const applicableStructure = sortedStructures.find((s) => {
+      const effectiveDate = s.effectiveFrom as string;
+      return effectiveDate <= targetDate;
+    });
+
+    if (applicableStructure) {
+      functionLogger.debug("Found applicable structure for current date", {
+        effectiveFrom: applicableStructure.effectiveFrom,
+        structureId: applicableStructure.structureId,
+      });
+      return stripBaseItem(applicableStructure);
+    } else {
+      functionLogger.warn("No applicable structure found for current date", {
+        targetDate,
+      });
+      // If no applicable structure is found, return the oldest one
+      const oldestStructure = sortedStructures[sortedStructures.length - 1];
+      functionLogger.debug("Returning the oldest structure", {
+        effectiveFrom: oldestStructure.effectiveFrom,
+        structureId: oldestStructure.structureId,
+      });
+      return stripBaseItem(oldestStructure);
+    }
   }
 
-  /**
-   * Find a field and its group in the journal structure
-   */
   function findFieldInStructure(
-    structure: { groups: any[] },
+    structure: Journal,
     fieldId: string
-  ): { field: any; groupId: string } {
+  ): { field: Field | null; groupId: string | null } {
     for (const group of structure.groups) {
-      const field = group.fields.find((f: any) => f.id === fieldId);
+      const field = group.fields.find((f) => f.id === fieldId);
       if (field) {
         return { field, groupId: group.id };
       }
     }
-    return { field: null, groupId: "" };
+    return { field: null, groupId: null };
   }
 
-  /**
-   * Process an action with options
-   */
   async function processActionWithOptions(
     journalEntry: JournalEntry,
     action: Action,
-    field: any,
+    field: Field,
     groupId: string,
-    value: any,
+    value: any, // Can be number for custom input, or undefined
     timestamp: string
   ) {
-    for (const option of action.options!) {
-      // Find if there's an existing value for this field type
-      const existingValueIndex = journalEntry.values.findIndex(
-        (v) =>
-          v.fieldId === action.fieldId && v.fieldTypeId === option.fieldTypeId
-      );
+    const functionLogger = logger.withContext({
+      function: "processActionWithOptions",
+      actionId: action.id,
+      fieldId: field.id,
+    });
+    functionLogger.debug("Processing action with options", { value });
 
-      if (existingValueIndex >= 0) {
-        // Update existing value
-        const existingValue = journalEntry.values[existingValueIndex];
-
-        if (option.isCustom && value !== undefined) {
-          // For custom value input
-          journalEntry.values[existingValueIndex] = {
-            ...existingValue,
-            value: value,
-            updatedAt: timestamp,
-          };
-        } else if (option.increment !== undefined) {
-          // For increment
-          const currentValue = Number(existingValue.value) || 0;
-          journalEntry.values[existingValueIndex] = {
-            ...existingValue,
-            value: currentValue + option.increment,
-            updatedAt: timestamp,
-          };
-        }
-      } else {
-        // Create new value
-        const newValue: FieldValue = {
-          groupId,
-          fieldId: action.fieldId,
-          fieldTypeId: option.fieldTypeId,
-          value:
-            option.isCustom && value !== undefined
-              ? value
-              : option.increment || 1,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        };
-
-        journalEntry.values.push(newValue);
-      }
-    }
-
-    // Also mark the CHECK field as done
-    updateCheckField(journalEntry, action.fieldId, field, groupId, timestamp);
-  }
-
-  /**
-   * Process an action without options
-   */
-  function processActionWithoutOptions(
-    journalEntry: JournalEntry,
-    action: Action,
-    field: any,
-    groupId: string,
-    timestamp: string
-  ) {
-    updateCheckField(journalEntry, action.fieldId, field, groupId, timestamp);
-  }
-
-  /**
-   * Update the CHECK field value
-   */
-  function updateCheckField(
-    journalEntry: JournalEntry,
-    fieldId: string,
-    field: any,
-    groupId: string,
-    timestamp: string
-  ) {
-    // Find if there's an existing CHECK value
-    const existingCheckValueIndex = journalEntry.values.findIndex(
-      (v) => v.fieldId === fieldId && v.fieldTypeId.includes("CHECK")
+    const option = action.options![0]; // Assuming one option for now
+    const fieldType = field.fieldTypes.find(
+      (ft) => ft.id === option.fieldTypeId
     );
 
-    if (existingCheckValueIndex >= 0) {
-      // Update existing CHECK value to true
-      journalEntry.values[existingCheckValueIndex] = {
-        ...journalEntry.values[existingCheckValueIndex],
-        value: true,
-        updatedAt: timestamp,
-      };
-    } else {
-      // Find the CHECK field type ID
-      const checkFieldType = field.fieldTypes.find(
-        (ft: any) => ft.kind === "CHECK"
-      );
+    if (!fieldType) {
+      functionLogger.error("FieldType not found for action option", {
+        fieldTypeId: option.fieldTypeId,
+      });
+      // This should ideally be caught by earlier validation
+      return;
+    }
 
-      if (checkFieldType) {
-        // Create new CHECK value
-        const checkValue: FieldValue = {
+    let existingValueIndex = journalEntry.values.findIndex(
+      (v) => v.fieldId === field.id && v.fieldTypeId === option.fieldTypeId
+    );
+
+    let newValue: string | number | boolean | null = null;
+
+    if (fieldType.kind === "NUMBER" || fieldType.kind === "NUMBER_NAVIGATION") {
+      const currentNumericValue =
+        existingValueIndex !== -1
+          ? Number(journalEntry.values[existingValueIndex].value)
+          : 0;
+      if (option.isCustom) {
+        newValue = Number(value); // Value from custom input
+      } else {
+        newValue = currentNumericValue + (option.increment || 1);
+      }
+    } else if (fieldType.kind === "CHECK") {
+      // This case might be handled by processActionWithoutOptions if CHECK is primary
+      newValue = true; // Or toggle: !(existingValueIndex !== -1 ? journalEntry.values[existingValueIndex].value : false)
+    }
+    // Add other FieldTypeKind handlers as needed
+
+    if (newValue !== null) {
+      if (existingValueIndex !== -1) {
+        journalEntry.values[existingValueIndex].value = newValue;
+        journalEntry.values[existingValueIndex].updatedAt = timestamp;
+      } else {
+        journalEntry.values.push({
           groupId,
-          fieldId,
+          fieldId: field.id,
+          fieldTypeId: option.fieldTypeId,
+          value: newValue,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      }
+      functionLogger.debug("Updated/added field value", { newValue });
+    }
+  }
+
+  async function processActionWithoutOptions(
+    journalEntry: JournalEntry,
+    action: Action,
+    field: Field,
+    groupId: string,
+    timestamp: string
+  ) {
+    const functionLogger = logger.withContext({
+      function: "processActionWithoutOptions",
+      actionId: action.id,
+      fieldId: field.id,
+    });
+    functionLogger.debug("Processing action without options (e.g., for CHECK)");
+
+    // Typically, an action without options might toggle a 'CHECK' field type.
+    // Find the 'CHECK' fieldType associated with this field.
+    const checkFieldType = field.fieldTypes.find((ft) => ft.kind === "CHECK");
+    if (checkFieldType) {
+      let existingValueIndex = journalEntry.values.findIndex(
+        (v) => v.fieldId === field.id && v.fieldTypeId === checkFieldType.id
+      );
+      if (existingValueIndex !== -1) {
+        journalEntry.values[existingValueIndex].value = true; // Or toggle
+        journalEntry.values[existingValueIndex].updatedAt = timestamp;
+      } else {
+        journalEntry.values.push({
+          groupId,
+          fieldId: field.id,
           fieldTypeId: checkFieldType.id,
           value: true,
           createdAt: timestamp,
           updatedAt: timestamp,
-        };
+        });
+      }
+      functionLogger.debug("Updated/added CHECK field value to true");
+    } else {
+      functionLogger.warn(
+        "No CHECK fieldType found for action without options",
+        { fieldId: field.id }
+      );
+    }
+  }
 
-        journalEntry.values.push(checkValue);
+  async function processCheckFieldType(
+    journalEntry: JournalEntry,
+    field: Field,
+    groupId: string,
+    timestamp: string
+  ) {
+    const functionLogger = logger.withContext({
+      function: "processCheckFieldType",
+      fieldId: field.id,
+    });
+
+    const checkFieldType = field.fieldTypes.find((ft) => ft.kind === "CHECK");
+    if (checkFieldType) {
+      functionLogger.debug("Processing CHECK field type for associated action");
+      let existingValueIndex = journalEntry.values.findIndex(
+        (v) => v.fieldId === field.id && v.fieldTypeId === checkFieldType.id
+      );
+      if (existingValueIndex !== -1) {
+        // Only update if not already true
+        if (journalEntry.values[existingValueIndex].value !== true) {
+          journalEntry.values[existingValueIndex].value = true;
+          journalEntry.values[existingValueIndex].updatedAt = timestamp;
+          functionLogger.debug("Updated CHECK field value to true");
+        } else {
+          functionLogger.debug(
+            "CHECK field value already true, no update needed"
+          );
+        }
+      } else {
+        journalEntry.values.push({
+          groupId,
+          fieldId: field.id,
+          fieldTypeId: checkFieldType.id,
+          value: true,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+        functionLogger.debug("Added CHECK field value as true");
+      }
+    } else {
+      functionLogger.debug(
+        "No CHECK fieldType found for this field, skipping check update.",
+        { fieldId: field.id }
+      );
+    }
+  }
+
+  async function processTimeSelectField(
+    journalEntry: JournalEntry,
+    field: Field,
+    // fieldId: string, // Parameter already removed
+    groupId: string, // Type is string as per function definition
+    timestamp: string
+  ) {
+    const functionLogger = logger.withContext({
+      function: "processTimeSelectField",
+      fieldId: field.id,
+    });
+
+    const timeSelectFieldType = field.fieldTypes.find(
+      (ft) => ft.kind === "TIME_SELECT"
+    );
+
+    if (timeSelectFieldType) {
+      functionLogger.debug("Processing TIME_SELECT field type");
+      let existingValueIndex = journalEntry.values.findIndex(
+        (v) =>
+          v.fieldId === field.id && v.fieldTypeId === timeSelectFieldType.id
+      );
+      const currentTime = new Date(timestamp).toTimeString().substring(0, 5); // HH:MM
+
+      if (existingValueIndex !== -1) {
+        // Update if it's the first registration of the day or if policy allows multiple updates
+        // For now, let's assume we always update it upon action registration
+        journalEntry.values[existingValueIndex].value = currentTime;
+        journalEntry.values[existingValueIndex].updatedAt = timestamp;
+        functionLogger.debug("Updated TIME_SELECT value", { currentTime });
+      } else {
+        journalEntry.values.push({
+          groupId,
+          fieldId: field.id,
+          fieldTypeId: timeSelectFieldType.id,
+          value: currentTime,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+        functionLogger.debug("Added TIME_SELECT value", { currentTime });
       }
     }
   }
 
-  /**
-   * Process TIME_SELECT field type
-   */
-  function processTimeSelectField(
-    journalEntry: JournalEntry,
-    field: any,
-    fieldId: string,
-    groupId: string,
-    timestamp: string
-  ) {
-    // Find if the field has a TIME_SELECT field type
-    const timeSelectFieldType = field.fieldTypes.find(
-      (ft: any) => ft.kind === "TIME_SELECT"
-    );
-
-    if (!timeSelectFieldType) {
-      return; // No TIME_SELECT field type found
-    }
-
-    // Get the step value from dataOptions or use default (30)
-    const stepValue =
-      timeSelectFieldType.dataOptions?.step !== undefined
-        ? Number(timeSelectFieldType.dataOptions.step)
-        : 30;
-
-    // Calculate current time as minutes from midnight
-    const now = new Date();
-    const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
-
-    // Round the time value according to the step
-    const roundedTimeValue =
-      Math.floor(currentTotalMinutes / stepValue) * stepValue;
-
-    // Find if there's an existing value for this TIME_SELECT field type
-    const existingTimeValueIndex = journalEntry.values.findIndex(
-      (v) => v.fieldId === fieldId && v.fieldTypeId === timeSelectFieldType.id
-    );
-
-    if (existingTimeValueIndex >= 0) {
-      // Update existing TIME_SELECT value
-      journalEntry.values[existingTimeValueIndex] = {
-        ...journalEntry.values[existingTimeValueIndex],
-        value: roundedTimeValue,
-        updatedAt: timestamp,
-      };
-    } else {
-      // Create new TIME_SELECT value
-      const timeValue: FieldValue = {
-        groupId,
-        fieldId,
-        fieldTypeId: timeSelectFieldType.id,
-        value: roundedTimeValue,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
-
-      journalEntry.values.push(timeValue);
-    }
-  }
-
-  /**
-   * Save journal entry
-   */
   async function saveJournalEntry(
     userId: string,
     dateString: string,
@@ -691,31 +883,19 @@ export default (router: Router) => {
       userId,
       date: dateString,
     });
+    functionLogger.debug("Saving journal entry");
 
     const { isNewEntry, ...entryToSave } = journalEntry;
+    entryToSave.updatedAt = new Date().toISOString(); // Always update timestamp on save
 
-    if (isNewEntry) {
-      functionLogger.debug("Creating new journal entry");
-      await putItem(process.env.DYNAMODB_TABLE_NAME!, {
-        PK: `USER#${userId}#ENTRIES`,
-        SK: `DATE#${dateString}`,
-        userId,
-        ...entryToSave,
-      });
-    } else {
-      functionLogger.debug("Updating existing journal entry");
-      await updateItem<JournalEntry & BaseItem>(
-        process.env.DYNAMODB_TABLE_NAME!,
-        {
-          PK: `USER#${userId}#ENTRIES`,
-          SK: `DATE#${dateString}`,
-        },
-        {
-          values: entryToSave.values,
-          updatedAt: entryToSave.updatedAt,
-        }
-      );
-    }
+    const itemToSave: JournalEntry & BaseItem = {
+      PK: `USER#${userId}#ENTRIES`,
+      SK: `DATE#${dateString}`,
+      userId: userId,
+      ...entryToSave,
+    };
+
+    await putItem(process.env.DYNAMODB_TABLE_NAME!, itemToSave);
     functionLogger.debug("Journal entry saved successfully");
   }
 };

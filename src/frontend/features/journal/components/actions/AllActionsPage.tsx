@@ -7,9 +7,11 @@ import {
   Paper,
   useTheme,
   IconButton,
+  CircularProgress,
 } from "@mui/material";
 import { ArrowBack as ArrowBackIcon } from "@mui/icons-material";
 import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useJournalActions } from "../../hooks/useJournalActions";
 import ActionItem from "./ActionItem";
@@ -57,6 +59,7 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
 
   const {
     actions,
@@ -109,7 +112,15 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
     }
   }, [actions]);
 
-  // Handle drag end event
+  // Separate valid and invalid actions
+  const validActions = orderedActions.filter(
+    (action) => !action._validation || action._validation.isValid
+  );
+  const invalidActions = orderedActions.filter(
+    (action) => action._validation && !action._validation.isValid
+  );
+
+  // Handle drag end event - only for valid actions
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
 
@@ -117,11 +128,19 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
 
     if (active.id !== over.id) {
       setOrderedActions((items) => {
-        const oldIndex = items.findIndex((item) => item.id === active.id);
-        const newIndex = items.findIndex((item) => item.id === over.id);
+        // Only reorder valid actions
+        const validItems = items.filter(
+          (item) => !item._validation || item._validation.isValid
+        );
+        const invalidItems = items.filter(
+          (item) => item._validation && !item._validation.isValid
+        );
 
-        // Update the order property for all items
-        const reordered = arrayMove(items, oldIndex, newIndex).map(
+        const oldIndex = validItems.findIndex((item) => item.id === active.id);
+        const newIndex = validItems.findIndex((item) => item.id === over.id);
+
+        // Update the order property for valid items only
+        const reordered = arrayMove(validItems, oldIndex, newIndex).map(
           (item, index) => ({
             ...item,
             order: index,
@@ -135,7 +154,8 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
           }
         });
 
-        return reordered;
+        // Combine reordered valid actions with unchanged invalid actions
+        return [...reordered, ...invalidItems];
       });
     }
   };
@@ -158,6 +178,23 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
   const handleActionCreated = () => {
     refreshActions();
     handleCloseCreateModal();
+  };
+
+  // Handle delete all invalid actions
+  const handleDeleteAllInvalid = async () => {
+    setIsDeletingAll(true);
+    try {
+      // Delete all invalid actions in parallel
+      await Promise.all(
+        invalidActions.map((action) => deleteAction(action.id))
+      );
+      // Refresh actions to update the UI
+      refreshActions();
+    } catch (error) {
+      console.error("Error deleting invalid actions:", error);
+    } finally {
+      setIsDeletingAll(false);
+    }
   };
 
   if (loading) {
@@ -214,6 +251,7 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
           </Button>
         </Box>
 
+        {/* Valid Actions Section */}
         <Paper
           elevation={0}
           sx={{
@@ -222,11 +260,16 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
             bgcolor: theme.palette.background.default,
             border: "1px solid",
             borderColor: "divider",
+            mb: invalidActions.length > 0 ? 3 : 0,
           }}
         >
-          {orderedActions.length === 0 ? (
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Active Actions
+          </Typography>
+
+          {validActions.length === 0 ? (
             <Typography variant="body1" align="center" sx={{ py: 4 }}>
-              No actions available. Create some actions to get started.
+              No valid actions available. Create some actions to get started.
             </Typography>
           ) : (
             <DndContext
@@ -235,7 +278,7 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
               onDragEnd={handleDragEnd}
             >
               <SortableContext
-                items={orderedActions.map((action) => action.id)}
+                items={validActions.map((action) => action.id)}
                 strategy={rectSortingStrategy}
               >
                 <Box
@@ -248,7 +291,7 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
                     gap: 2,
                   }}
                 >
-                  {orderedActions.map((action, index) => (
+                  {validActions.map((action, index) => (
                     <SortableActionItem
                       key={action.id}
                       action={action}
@@ -264,6 +307,114 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
             </DndContext>
           )}
         </Paper>
+
+        {/* Invalid Actions Section */}
+        {invalidActions.length > 0 && (
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              borderRadius: 2,
+              bgcolor: theme.palette.background.default,
+              border: "1px solid",
+              borderColor: "warning.main",
+              borderStyle: "dashed",
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                mb: 1,
+              }}
+            >
+              <Typography variant="h6" sx={{ color: "warning.main" }}>
+                Invalid Actions
+              </Typography>
+              <Button
+                variant="outlined"
+                color="warning"
+                size="small"
+                onClick={handleDeleteAllInvalid}
+                disabled={isDeletingAll}
+                startIcon={
+                  isDeletingAll ? (
+                    <CircularProgress size={16} />
+                  ) : (
+                    <DeleteIcon />
+                  )
+                }
+              >
+                {isDeletingAll ? "Deleting..." : "Delete All Invalid"}
+              </Button>
+            </Box>
+            <Typography variant="body2" sx={{ mb: 3, color: "text.secondary" }}>
+              These actions are no longer compatible with your current journal
+              structure. You can delete them or wait until the associated fields
+              are recreated.
+            </Typography>
+
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: `repeat(${MAX_VISIBLE_ACTIONS / 2}, 1fr)`,
+                  md: `repeat(${MAX_VISIBLE_ACTIONS}, 1fr)`,
+                },
+                gap: 2,
+              }}
+            >
+              {invalidActions.map((action) => (
+                <Box
+                  key={action.id}
+                  sx={{
+                    position: "relative",
+                    opacity: 0.6,
+                    filter: "grayscale(0.5)",
+                  }}
+                >
+                  <ActionItem
+                    action={action}
+                    registerAction={async () => false} // Disabled - cannot be triggered
+                    deleteAction={deleteAction}
+                    getActionDetails={(action) => {
+                      // Override getActionDetails to show minimal info
+                      return {
+                        fieldName: action.name,
+                        fieldTypeName: "Invalid Configuration",
+                        fieldTypeKind: null,
+                        currentValue: null,
+                        isCustom: false,
+                        validation: action._validation,
+                      };
+                    }}
+                    showDeleteButton={true}
+                    isCompletedToday={false}
+                  />
+
+                  {/* Disabled overlay - prevents interaction except for delete button */}
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: "transparent",
+                      cursor: "not-allowed",
+                      zIndex: 1,
+                      // Exclude the delete button area from pointer events
+                      clipPath:
+                        "polygon(0% 0%, 85% 0%, 85% 35%, 100% 35%, 100% 0%, 100% 100%, 0% 100%)",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </Box>
+              ))}
+            </Box>
+          </Paper>
+        )}
       </Box>
 
       <CreateActionModal
