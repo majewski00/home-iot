@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 0.2.4 - 2025-06-08
+
+-- *Stable version for Prod*
+
+### Added
+
+- Icon Picker component for journal actions with Material-UI icon integration in `IconPicker.tsx` and `LazyIcon.tsx`
+  - Search functionality with debounced input via `useDebounce.ts` hook
+  - Pagination support for browsing 1000+ available icons
+  - Color variants selection with 8 predefined colors including custom brown and yellow
+  - Lazy loading optimization to improve initial bundle size
+- Custom Scale field type for user-defined labeled scales in `CustomScaleFieldView.tsx` and `CustomScaleFieldEdit.tsx`
+  - Dynamic label creation with add/remove functionality
+  - Visual preview during configuration
+  - Support for any number of scale points with minimum validation
+- Enhanced action system with optional icon and color support
+  - Icon selection integration in `CreateActionModal.tsx`
+  - Backend API updates in `useJournalActions.ts` to handle icon parameters
+
+### Changed
+
+- Upgraded React Router from `BrowserRouter` to `createBrowserRouter` for improved performance
+- Enhanced field type factory in `FieldTypeFactory.tsx` to support custom scale fields
+- Improved mobile viewport configuration and responsive design
+- Enhanced loading states and user feedback across journal components
+
+### Fixed
+
+- Added beforeunload warning to prevent data loss when leaving with unsaved changes
+- Improved action completion status tracking for daily actions
+- Enhanced error handling and validation throughout the application
+
 ## 0.2.3 - 2025-06-07
 
 ### Added

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useBlocker } from "react-router-dom";
 import {
   Box,
   Typography,
@@ -11,6 +11,10 @@ import {
   Alert,
   Fade,
   useTheme,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import {
   Edit as EditIcon,
@@ -40,6 +44,11 @@ const JournalPage: React.FC = () => {
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [saveError, setSaveError] = useState<boolean>(false);
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
+  const [showUnsavedChangesDialog, setShowUnsavedChangesDialog] =
+    useState<boolean>(false);
+  const [pendingNavigation, setPendingNavigation] = useState<
+    (() => void) | null
+  >(null);
 
   // Check if we're in the all actions view
   const searchParams = new URLSearchParams(location.search);
@@ -65,6 +74,19 @@ const JournalPage: React.FC = () => {
     refreshEntry,
     quickFillValues,
   } = useJournalEntry(structure, selectedDate, isEditMode);
+
+  // Block navigation when there are unsaved changes
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      entryHasChanges && currentLocation.pathname !== nextLocation.pathname
+  );
+
+  useEffect(() => {
+    if (blocker.state === "blocked") {
+      setShowUnsavedChangesDialog(true);
+      setPendingNavigation(() => () => blocker.proceed());
+    }
+  }, [blocker]);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
@@ -98,6 +120,17 @@ const JournalPage: React.FC = () => {
   }, [selectedDate, isEditMode]);
 
   const handleDateChange = (date: string) => {
+    if (entryHasChanges) {
+      setShowUnsavedChangesDialog(true);
+      setPendingNavigation(() => () => {
+        setSelectedDate(date);
+        if (isEditMode) {
+          setIsEditMode(false);
+        }
+      });
+      return;
+    }
+
     setSelectedDate(date);
     if (isEditMode) {
       setIsEditMode(false);
@@ -120,6 +153,41 @@ const JournalPage: React.FC = () => {
     } catch (error) {
       console.error("Error saving journal entry:", error);
       setSaveError(true);
+    }
+  };
+
+  const handleUnsavedChangesDialog = async (
+    action: "save" | "discard" | "cancel"
+  ) => {
+    if (action === "save") {
+      try {
+        const result = await saveEntry();
+        if (result) {
+          setShowUnsavedChangesDialog(false);
+          if (pendingNavigation) {
+            pendingNavigation();
+            setPendingNavigation(null);
+          }
+        } else {
+          setSaveError(true);
+        }
+      } catch (error) {
+        console.error("Error saving journal entry:", error);
+        setSaveError(true);
+      }
+    } else if (action === "discard") {
+      setShowUnsavedChangesDialog(false);
+      if (pendingNavigation) {
+        pendingNavigation();
+        setPendingNavigation(null);
+      }
+    } else {
+      // Cancel
+      setShowUnsavedChangesDialog(false);
+      setPendingNavigation(null);
+      if (blocker.state === "blocked") {
+        blocker.reset();
+      }
     }
   };
 
@@ -313,56 +381,73 @@ const JournalPage: React.FC = () => {
           <Paper
             elevation={0}
             sx={{
-              p: 3,
               mt: 4,
-              borderRadius: 2,
-              bgcolor: theme.palette.background.default,
-              border: "2px dotted",
-              borderColor: "divider",
-              borderWidth: "1px",
-              boxShadow: "none",
+              borderRadius: 3,
+              bgcolor: "background.paper",
+              overflow: "hidden",
             }}
           >
             {structure.groups.length === 0 ? (
-              <Typography variant="body1" align="center" sx={{ py: 4 }}>
-                No groups in your journal. Add some in Edit Mode.
-              </Typography>
+              <Box sx={{ p: 6, textAlign: "center" }}>
+                <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
+                  No groups in your journal
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Add some groups in Edit Mode to get started.
+                </Typography>
+              </Box>
             ) : (
-              structure.groups
-                .sort((a, b) => a.order - b.order)
-                .map((group) => (
-                  <JournalGroupDisplay
-                    key={group.id}
-                    group={group}
-                    entry={entry}
-                    onUpdateValue={updateValue}
-                    selectedDate={selectedDate}
-                  />
-                ))
+              <Box sx={{ p: 0.2 }}>
+                {structure.groups
+                  .sort((a, b) => a.order - b.order)
+                  .map((group) => (
+                    <JournalGroupDisplay
+                      key={group.id}
+                      group={group}
+                      entry={entry}
+                      onUpdateValue={updateValue}
+                      selectedDate={selectedDate}
+                    />
+                  ))}
+              </Box>
             )}
+          </Paper>
+        )}
 
-            <Box display="flex" justifyContent="center" mt={4}>
+        {/* Floating Save Button - only appears when there are changes */}
+        {entryHasChanges && (
+          <Fade in={entryHasChanges}>
+            <Box
+              sx={{
+                position: "fixed",
+                bottom: 24,
+                right: 24,
+                zIndex: 1000,
+              }}
+            >
               <Button
                 variant="contained"
                 color="primary"
                 size="large"
                 startIcon={<SaveIcon />}
                 onClick={handleSaveEntry}
-                disabled={!entryHasChanges}
                 sx={{
                   px: 4,
                   py: 1.5,
-                  borderRadius: 2,
-                  boxShadow: 2,
+                  borderRadius: 3,
+                  fontWeight: 600,
+                  boxShadow: "0 8px 24px rgba(25, 118, 210, 0.3)",
                   "&:hover": {
-                    boxShadow: 4,
+                    boxShadow: "0 12px 32px rgba(25, 118, 210, 0.4)",
+                    transform: "translateY(-2px)",
                   },
+                  transition: "all 0.2s ease",
                 }}
               >
                 Save Journal
               </Button>
             </Box>
-          </Paper>
+          </Fade>
         )}
         {isLoadingStructure && isLoadingEntry && (
           <Box
@@ -378,6 +463,44 @@ const JournalPage: React.FC = () => {
           </Box>
         )}
       </Box>
+
+      {/* Unsaved Changes Dialog */}
+      <Dialog
+        open={showUnsavedChangesDialog}
+        onClose={() => handleUnsavedChangesDialog("cancel")}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Unsaved Changes</DialogTitle>
+        <DialogContent>
+          <Typography>
+            You have unsaved changes in your journal entry. What would you like
+            to do?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => handleUnsavedChangesDialog("cancel")}
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => handleUnsavedChangesDialog("discard")}
+            color="warning"
+            variant="outlined"
+          >
+            Discard Changes
+          </Button>
+          <Button
+            onClick={() => handleUnsavedChangesDialog("save")}
+            color="primary"
+            variant="contained"
+          >
+            Save & Continue
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

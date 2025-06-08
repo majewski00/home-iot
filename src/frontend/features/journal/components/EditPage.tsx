@@ -13,13 +13,17 @@ import {
   useTheme,
   Menu,
   MenuItem,
-  Collapse,
-  Select,
+  Card,
+  CardContent,
+  CardActions,
+  Stack,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
+  Tooltip,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -27,10 +31,18 @@ import {
   MoreVert as MoreVertIcon,
   DragIndicator as DragIndicatorIcon,
   Delete as DeleteIcon,
-  Edit as EditIcon,
   KeyboardArrowUp as ArrowUpIcon,
   KeyboardArrowDown as ArrowDownIcon,
   ArrowBack as ArrowBackIcon,
+  Settings as SettingsIcon,
+  Numbers as NumberIcon,
+  Schedule as TimeIcon,
+  Warning as SeverityIcon,
+  LinearScale as RangeIcon,
+  Navigation as NavigationIcon,
+  Info as InfoIcon,
+  Tune as TuneIcon, // Add import for CUSTOM_SCALE icon
+  VisibilityOff as VisibilityOffIcon, // New import for collapsed indicator
 } from "@mui/icons-material";
 import {
   Field,
@@ -48,9 +60,11 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  DragOverEvent,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
@@ -71,6 +85,21 @@ interface EditPageContentProps {
   hasChanges: boolean;
   methods: UseJournalStructureMethods;
   onExitEditMode: () => void;
+}
+
+interface SortableFieldItemProps {
+  field: Field;
+  groupId: string;
+  renamingFieldId: string | null;
+  newFieldName: string;
+  setNewFieldName: (name: string) => void;
+  handleFieldRenameSubmit: (e: React.FormEvent) => Promise<void>;
+  handleFieldRenameInputBlur: () => void;
+  handleFieldMenuOpen: (
+    event: React.MouseEvent<HTMLElement>,
+    field: Field,
+    groupId: string
+  ) => void;
 }
 
 const EditPageContent: React.FC<EditPageContentProps> = ({
@@ -110,6 +139,18 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
   const addFieldButtonRefs = useRef<Record<string, HTMLButtonElement | null>>(
     {}
   );
+  const [editingFieldTypes, setEditingFieldTypes] = useState<string | null>(
+    null
+  );
+  const [addingFieldToGroup, setAddingFieldToGroup] = useState<string | null>(
+    null
+  );
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [draggedField, setDraggedField] = useState<Field | null>(null);
+  const [insertionIndex, setInsertionIndex] = useState<number | null>(null);
+  const [draggedFromGroupId, setDraggedFromGroupId] = useState<string | null>(
+    null
+  );
 
   const {
     refreshStructure,
@@ -125,6 +166,7 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
     saveStructure,
     reorderField,
     reorderGroup,
+    toggleGroupCollapsed,
   } = methods;
 
   // Set up DnD sensors
@@ -225,19 +267,21 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
     setNewFieldName(e.target.value);
   };
 
+  // Simplified field adding - no more complex insertion points
+  const handleAddFieldToGroup = (groupId: string) => {
+    setAddingFieldToGroup(groupId);
+    setNewFieldName("");
+  };
+
   // Handle field name submit
   const handleFieldNameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!addingFieldToGroup) return;
 
-    if (!showFieldInput) return;
-
-    const { groupId, index } = showFieldInput;
     const name = newFieldName.trim() || "New Field";
-
     try {
-      await addField(groupId, name, index);
-
-      setShowFieldInput(null);
+      await addField(addingFieldToGroup, name);
+      setAddingFieldToGroup(null);
       setNewFieldName("");
     } catch (error) {
       console.error("Error adding field:", error);
@@ -328,9 +372,97 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
     setActiveField(null);
   };
 
+  // Get field type icon
+  const getFieldTypeIcon = (kind: FieldTypeKind) => {
+    switch (kind) {
+      case "NUMBER":
+        return <NumberIcon fontSize="small" />;
+      case "NUMBER_NAVIGATION":
+        return <NavigationIcon fontSize="small" />;
+      case "TIME_SELECT":
+        return <TimeIcon fontSize="small" />;
+      case "SEVERITY":
+        return <SeverityIcon fontSize="small" />;
+      case "RANGE":
+        return <RangeIcon fontSize="small" />;
+      case "CUSTOM_SCALE":
+        return <TuneIcon fontSize="small" />;
+      default:
+        return <SettingsIcon fontSize="small" />;
+    }
+  };
+
+  // Calculate insertion index based on drag position
+  const calculateInsertionIndex = (
+    overId: string | null,
+    draggedFieldId: string,
+    groupFields: Field[]
+  ): number | null => {
+    if (!overId || !draggedFieldId) return null;
+
+    // Find the index of the field being hovered over
+    const overIndex = groupFields.findIndex((f) => f.id === overId);
+    const draggedIndex = groupFields.findIndex((f) => f.id === draggedFieldId);
+
+    if (overIndex === -1 || draggedIndex === -1) return null;
+
+    // If dragging down (draggedIndex < overIndex), insert after the target
+    // If dragging up (draggedIndex > overIndex), insert before the target
+    if (draggedIndex < overIndex) {
+      return overIndex; // Insert after target (target moves down)
+    } else {
+      return overIndex; // Insert before target (target moves up)
+    }
+  };
+
+  // Handle drag start
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+    setDraggedFromGroupId(event.active.data.current?.groupId as string);
+
+    // Find the dragged field
+    const field = structure?.groups
+      .flatMap((g) => g.fields)
+      .find((f) => f.id === event.active.id);
+
+    setDraggedField(field || null);
+  };
+
+  // Handle drag over with precise insertion calculation
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+
+    if (!over || !active || !draggedFromGroupId) {
+      setInsertionIndex(null);
+      return;
+    }
+
+    // Find the group containing the dragged field
+    const group = structure?.groups.find((g) => g.id === draggedFromGroupId);
+    if (!group) {
+      setInsertionIndex(null);
+      return;
+    }
+
+    const sortedFields = group.fields.sort((a, b) => a.order - b.order);
+    const insertIndex = calculateInsertionIndex(
+      over.id as string,
+      active.id as string,
+      sortedFields
+    );
+
+    setInsertionIndex(insertIndex);
+  };
+
   // Handle field drag and drop
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
+
+    // Clear drag state
+    setActiveId(null);
+    setDraggedField(null);
+    setInsertionIndex(null);
+    setDraggedFromGroupId(null);
 
     if (!over) return;
 
@@ -342,10 +474,15 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
       const group = structure?.groups.find((g) => g.id === groupId);
       if (!group) return;
 
-      const oldIndex = group.fields.findIndex((f) => f.id === fieldId);
-      const newIndex = group.fields.findIndex((f) => f.id === over.id);
+      const sortedFields = group.fields.sort((a, b) => a.order - b.order);
+      const oldIndex = sortedFields.findIndex((f) => f.id === fieldId);
+      const newIndex = calculateInsertionIndex(
+        over.id as string,
+        fieldId,
+        sortedFields
+      );
 
-      if (oldIndex !== -1 && newIndex !== -1) {
+      if (oldIndex !== -1 && newIndex !== null && oldIndex !== newIndex) {
         try {
           await reorderField(fieldId, newIndex);
         } catch (error) {
@@ -469,6 +606,18 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
     }
   };
 
+  // Handle toggle group collapsed state
+  const handleToggleGroupCollapsed = async () => {
+    if (activeGroup) {
+      try {
+        await toggleGroupCollapsed(activeGroup.id);
+        handleGroupMenuClose();
+      } catch (error) {
+        console.error("Error toggling group collapsed state:", error);
+      }
+    }
+  };
+
   // Loading state
   if (isLoading) {
     return (
@@ -529,11 +678,12 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
   return (
     <Container maxWidth="md">
       <Box py={4}>
+        {/* Header */}
         <Box
           display="flex"
           justifyContent="space-between"
           alignItems="center"
-          mb={4}
+          mb={2} // Reduced from mb={4}
         >
           <Box sx={{ display: "flex", alignItems: "center" }}>
             <IconButton
@@ -544,27 +694,22 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
               <ArrowBackIcon />
             </IconButton>
             <Typography variant="h4" component="h1">
-              Edit Journal
+              Edit Journal Structure
             </Typography>
           </Box>
-
           <Button
             variant="contained"
             color="primary"
             startIcon={<SaveIcon />}
             onClick={handleSave}
             disabled={!hasChanges}
-            sx={{
-              px: 3,
-              py: 1,
-              borderRadius: 2,
-            }}
+            sx={{ px: 3, py: 1, borderRadius: 2 }}
           >
             Save Changes
           </Button>
         </Box>
 
-        {/* Save notification */}
+        {/* Save notifications */}
         <Fade in={saveSuccess}>
           <Alert
             severity="success"
@@ -585,277 +730,407 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
           </Alert>
         </Fade>
 
-        {/* Journal structure editor */}
-        <Paper
-          elevation={0}
-          sx={{
-            p: 3,
-            borderRadius: 2,
-            bgcolor: theme.palette.background.default,
-            border: "0px solid",
-            borderColor: "divider",
-            borderWidth: "1px",
-            boxShadow: "none",
-          }}
-        >
-          {structure.groups.length === 0 ? (
-            <Typography variant="body1" align="center" sx={{ py: 4 }}>
-              No groups in your journal. Add a group to get started.
-            </Typography>
-          ) : (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              {structure.groups
-                .sort((a, b) => a.order - b.order)
-                .map((group) => (
-                  <Box key={group.id} mb={4}>
-                    {/* Group header */}
-                    <Box
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        mb: 2,
-                        pb: 1,
-                        borderBottom: "1px solid",
-                        borderColor: "divider",
-                      }}
-                    >
-                      {renamingGroupId === group.id ? (
-                        <Box
-                          component="form"
-                          onSubmit={handleGroupNameSubmit}
-                          sx={{ mr: 2, flexGrow: 1 }}
-                        >
-                          <TextField
-                            fullWidth
-                            variant="outlined"
-                            size="small"
-                            value={newGroupName}
-                            onChange={handleGroupNameChange}
-                            onBlur={handleGroupNameInputBlur}
-                            inputRef={newGroupNameInputRef}
-                            // autoFocus removed
-                            sx={{
-                              "& .MuiOutlinedInput-root": {
-                                fontSize: theme.typography.h6.fontSize,
-                                fontWeight: theme.typography.h6.fontWeight,
-                              },
-                            }}
-                          />
-                        </Box>
-                      ) : (
-                        <Typography variant="h6" component="div" sx={{ mr: 2 }}>
-                          {group.name}
-                        </Typography>
-                      )}
+        {/* Main editing area */}
+        <Stack spacing={4}>
+          {structure.groups
+            .sort((a, b) => a.order - b.order)
+            .map((group) => (
+              <Paper
+                key={group.id}
+                elevation={1}
+                sx={{
+                  borderRadius: 3,
+                  overflow: "hidden",
+                  bgcolor: "background.paper",
+                  // Add visual indicator for collapsed groups
+                  opacity: group.collapsedByDefault ? 0.8 : 1,
+                  border: group.collapsedByDefault ? "1px dashed" : "none",
+                  borderColor: group.collapsedByDefault
+                    ? "grey.400"
+                    : "transparent",
+                }}
+              >
+                {/* Group Header */}
+                <Box
+                  sx={{
+                    bgcolor: group.collapsedByDefault ? "grey.100" : "grey.50",
+                    p: 3,
+                    borderBottom: "1px solid",
+                    borderColor: "divider",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center", flex: 1 }}>
+                    {/* Collapsed indicator */}
+                    {group.collapsedByDefault && (
+                      <Tooltip title="This group is collapsed by default in journal view">
+                        <VisibilityOffIcon
+                          sx={{
+                            mr: 1,
+                            color: "text.secondary",
+                            fontSize: "1.1rem",
+                          }}
+                        />
+                      </Tooltip>
+                    )}
 
-                      <Box sx={{ flexGrow: 1 }} />
-
-                      <IconButton
-                        size="small"
-                        onClick={(e) => handleGroupMenuOpen(e, group)}
-                        aria-label="group options"
+                    {renamingGroupId === group.id ? (
+                      <Box
+                        component="form"
+                        onSubmit={handleGroupNameSubmit}
+                        sx={{ flex: 1, mr: 2 }}
                       >
-                        <MoreVertIcon />
-                      </IconButton>
-                    </Box>
+                        <TextField
+                          fullWidth
+                          variant="outlined"
+                          size="medium"
+                          value={newGroupName}
+                          onChange={handleGroupNameChange}
+                          onBlur={handleGroupNameInputBlur}
+                          inputRef={newGroupNameInputRef}
+                          sx={{
+                            "& .MuiOutlinedInput-root": {
+                              fontSize: theme.typography.h5.fontSize,
+                              fontWeight: theme.typography.h5.fontWeight,
+                            },
+                          }}
+                        />
+                      </Box>
+                    ) : (
+                      <Typography
+                        variant="h5"
+                        component="h2"
+                        sx={{
+                          fontWeight: 600,
+                          color: group.collapsedByDefault
+                            ? "text.secondary"
+                            : "text.primary",
+                        }}
+                      >
+                        {group.name}
+                      </Typography>
+                    )}
+                  </Box>
 
-                    {/* Fields */}
+                  <Box
+                    sx={{
+                      display: "flex",
+                      gap: 1,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Typography variant="body2" color="text.secondary">
+                      {group.fields.length} Field
+                      {group.fields.length !== 1 ? "s" : ""}
+                    </Typography>
+                    {group.collapsedByDefault && (
+                      <Chip
+                        label="Collapsed"
+                        size="small"
+                        variant="outlined"
+                        sx={{
+                          fontSize: "0.7rem",
+                          height: "20px",
+                          color: "text.secondary",
+                          borderColor: "grey.400",
+                        }}
+                      />
+                    )}
+                    <IconButton
+                      size="small"
+                      onClick={(e) => handleGroupMenuOpen(e, group)}
+                      aria-label="group options"
+                    >
+                      <MoreVertIcon />
+                    </IconButton>
+                  </Box>
+                </Box>
+
+                {/* Group Content */}
+                <Box sx={{ p: 3 }}>
+                  {/* Fields */}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragStart={handleDragStart}
+                    onDragOver={handleDragOver}
+                    onDragEnd={handleDragEnd}
+                  >
                     <SortableContext
                       items={group.fields.map((field) => field.id)}
                       strategy={verticalListSortingStrategy}
                     >
-                      <Box sx={{ mb: 2 }}>
-                        {group.fields.length === 0 ? (
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            align="center"
-                            sx={{ py: 2 }}
-                          >
-                            No fields in this group
-                          </Typography>
-                        ) : (
-                          group.fields
-                            .sort((a, b) => a.order - b.order)
-                            .map((field, index) => (
+                      <Stack spacing={2}>
+                        {group.fields
+                          .sort((a, b) => a.order - b.order)
+                          .map((field, index) => {
+                            const isBeingDragged = activeId === field.id;
+                            const isDragActive = Boolean(
+                              activeId && draggedFromGroupId === group.id
+                            );
+
+                            // Show drop indicator before this field if insertion index matches
+                            const showDropIndicatorBefore =
+                              isDragActive &&
+                              !isBeingDragged &&
+                              insertionIndex === index;
+
+                            // Show drop indicator after last field if inserting at end
+                            const isLastField =
+                              index === group.fields.length - 1;
+                            const showDropIndicatorAfter =
+                              isDragActive &&
+                              !isBeingDragged &&
+                              isLastField &&
+                              insertionIndex === group.fields.length;
+
+                            return (
                               <React.Fragment key={field.id}>
-                                {/* Field insertion hover area (now at top) */}
-                                <Box
-                                  className="field-insert"
+                                {/* Drop indicator before current field */}
+                                {showDropIndicatorBefore && (
+                                  <Box
+                                    sx={{
+                                      height: "3px",
+                                      bgcolor: "primary.main",
+                                      borderRadius: "1.5px",
+                                      mx: 1,
+                                      boxShadow:
+                                        "0 0 8px rgba(25, 118, 210, 0.6)",
+                                      animation:
+                                        "pulse 1.5s ease-in-out infinite",
+                                      "@keyframes pulse": {
+                                        "0%, 100%": { opacity: 0.8 },
+                                        "50%": { opacity: 1 },
+                                      },
+                                    }}
+                                  />
+                                )}
+
+                                <Card
+                                  variant="outlined"
                                   sx={{
-                                    height: "30px", // Increased height for better usability
-                                    mb: 1,
-                                    opacity: 0,
-                                    transition: "opacity 0.2s",
-                                    display: "flex",
-                                    justifyContent: "center",
-                                    alignItems: "center",
+                                    borderRadius: 2,
                                     "&:hover": {
-                                      opacity: 1, // Show the entire area on hover
-                                      "& .insert-line": {
-                                        height: "4px",
-                                      },
-                                      "& .insert-button": {
-                                        opacity: 1,
-                                      },
+                                      boxShadow: activeId ? 0 : 1,
                                     },
+                                    opacity: isBeingDragged ? 0.3 : 1,
+                                    transition: "all 0.2s ease",
                                   }}
                                 >
+                                  <SortableFieldItem
+                                    field={field}
+                                    groupId={group.id}
+                                    renamingFieldId={renamingFieldId}
+                                    newFieldName={newFieldName}
+                                    setNewFieldName={setNewFieldName}
+                                    handleFieldRenameSubmit={
+                                      handleFieldRenameSubmit
+                                    }
+                                    handleFieldRenameInputBlur={
+                                      handleFieldRenameInputBlur
+                                    }
+                                    handleFieldMenuOpen={handleFieldMenuOpen}
+                                    editingFieldTypes={editingFieldTypes}
+                                    setEditingFieldTypes={setEditingFieldTypes}
+                                    addFieldType={addFieldType}
+                                    updateFieldType={updateFieldType}
+                                    removeFieldType={removeFieldType}
+                                    getFieldTypeIcon={getFieldTypeIcon}
+                                  />
+                                </Card>
+
+                                {/* Drop indicator after last field */}
+                                {showDropIndicatorAfter && (
                                   <Box
-                                    className="insert-line"
                                     sx={{
-                                      width: "100%",
-                                      height: "2px",
+                                      height: "3px",
                                       bgcolor: "primary.main",
-                                      transition: "height 0.2s",
-                                      position: "relative",
+                                      borderRadius: "1.5px",
+                                      mx: 1,
+                                      boxShadow:
+                                        "0 0 8px rgba(25, 118, 210, 0.6)",
+                                      animation:
+                                        "pulse 1.5s ease-in-out infinite",
+                                      "@keyframes pulse": {
+                                        "0%, 100%": { opacity: 0.8 },
+                                        "50%": { opacity: 1 },
+                                      },
                                     }}
-                                  >
-                                    <IconButton
-                                      className="insert-button"
-                                      size="small"
-                                      color="primary"
-                                      onClick={
-                                        () => handleAddField(group.id, index) // MODIFIED: index + 1 to index
-                                      }
-                                      sx={{
-                                        position: "absolute",
-                                        top: "50%",
-                                        left: "50%",
-                                        transform: "translate(-50%, -50%)",
-                                        bgcolor: "background.paper",
-                                        opacity: 0,
-                                        transition: "opacity 0.2s",
-                                        "&:hover": {
-                                          bgcolor: "background.paper",
-                                        },
-                                      }}
-                                    >
-                                      <AddIcon fontSize="small" />
-                                    </IconButton>
-                                  </Box>
-                                </Box>
-
-                                {/* Field insertion point */}
-                                {showFieldInput?.groupId === group.id &&
-                                  showFieldInput?.index === index && (
-                                    <Box
-                                      component="form"
-                                      onSubmit={handleFieldNameSubmit}
-                                      sx={{
-                                        p: 2,
-                                        mb: 2,
-                                        borderRadius: 2,
-                                        bgcolor: "background.paper",
-                                        border: "1px dashed",
-                                        borderColor: "primary.main",
-                                      }}
-                                    >
-                                      <TextField
-                                        fullWidth
-                                        variant="outlined"
-                                        size="small"
-                                        placeholder="Enter field name"
-                                        value={newFieldName}
-                                        onChange={handleFieldNameChange}
-                                        onBlur={handleFieldNameInputBlur}
-                                        inputRef={newFieldInputRef}
-                                        autoFocus
-                                      />
-                                    </Box>
-                                  )}
-
-                                {/* Field item */}
-                                <SortableFieldItem
-                                  field={field}
-                                  groupId={group.id}
-                                  renamingFieldId={renamingFieldId}
-                                  newFieldName={newFieldName}
-                                  setNewFieldName={setNewFieldName}
-                                  handleFieldRenameSubmit={
-                                    handleFieldRenameSubmit
-                                  }
-                                  handleFieldRenameInputBlur={
-                                    handleFieldRenameInputBlur
-                                  }
-                                  handleFieldMenuOpen={handleFieldMenuOpen}
-                                  addFieldType={addFieldType}
-                                  updateFieldType={updateFieldType}
-                                  removeFieldType={removeFieldType}
-                                />
+                                  />
+                                )}
                               </React.Fragment>
-                            ))
-                        )}
-
-                        {/* Last field insertion point */}
-                        {showFieldInput?.groupId === group.id &&
-                          showFieldInput?.index === null && (
-                            <Box
-                              component="form"
-                              onSubmit={handleFieldNameSubmit}
-                              sx={{
-                                p: 2,
-                                mb: 2,
-                                borderRadius: 2,
-                                bgcolor: "background.paper",
-                                border: "1px dashed",
-                                borderColor: "primary.main",
-                              }}
-                            >
-                              <TextField
-                                fullWidth
-                                variant="outlined"
-                                size="small"
-                                placeholder="Enter field name"
-                                value={newFieldName}
-                                onChange={handleFieldNameChange}
-                                onBlur={handleFieldNameInputBlur}
-                                inputRef={newFieldInputRef}
-                                autoFocus
-                              />
-                            </Box>
-                          )}
-                      </Box>
+                            );
+                          })}
+                      </Stack>
                     </SortableContext>
 
-                    {/* Add field button */}
-                    <Box sx={{ textAlign: "center" }}>
+                    {/* Drag Overlay */}
+                    <DragOverlay dropAnimation={null}>
+                      {activeId && draggedField ? (
+                        <Card
+                          variant="outlined"
+                          sx={{
+                            borderRadius: 2,
+                            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.12)",
+                            bgcolor: "background.paper",
+                            border: "2px solid",
+                            borderColor: "primary.main",
+                            transform: "scale(1.02)",
+                            opacity: 0.95,
+                          }}
+                        >
+                          <CardContent>
+                            <Box
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 2,
+                              }}
+                            >
+                              <DragIndicatorIcon
+                                sx={{ color: "primary.main" }}
+                              />
+                              <Typography variant="h6" sx={{ flex: 1 }}>
+                                {draggedField.name}
+                              </Typography>
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  gap: 1,
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                {draggedField.fieldTypes
+                                  .filter((ft) => ft.kind !== "CHECK")
+                                  .map((ft) => (
+                                    <Chip
+                                      key={ft.id}
+                                      icon={getFieldTypeIcon(
+                                        ft.kind as FieldTypeKind
+                                      )}
+                                      label={ft.description || ft.kind}
+                                      size="small"
+                                      variant="outlined"
+                                    />
+                                  ))}
+                              </Box>
+                            </Box>
+                          </CardContent>
+                        </Card>
+                      ) : null}
+                    </DragOverlay>
+                  </DndContext>
+
+                  {/* Add Field Section */}
+                  {addingFieldToGroup === group.id ? (
+                    <Card
+                      variant="outlined"
+                      sx={{
+                        mt: 2,
+                        borderStyle: "dashed",
+                        borderColor: "primary.main",
+                        bgcolor: "primary.50",
+                      }}
+                    >
+                      <CardContent>
+                        <Box component="form" onSubmit={handleFieldNameSubmit}>
+                          <TextField
+                            fullWidth
+                            variant="outlined"
+                            size="medium"
+                            placeholder="Enter Field Name..."
+                            value={newFieldName}
+                            onChange={handleFieldNameChange}
+                            onBlur={() => {
+                              if (newFieldName.trim()) {
+                                handleFieldNameSubmit({
+                                  preventDefault: () => {},
+                                } as React.FormEvent);
+                              } else {
+                                setAddingFieldToGroup(null);
+                              }
+                            }}
+                            inputRef={newFieldInputRef}
+                            autoFocus
+                          />
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <Box
+                      sx={{
+                        mt: group.fields.length > 0 ? 3 : 0,
+                        textAlign: "center",
+                      }}
+                    >
                       <Button
-                        ref={(el) => {
-                          if (group.id) {
-                            // Ensure group.id is valid before using as key
-                            addFieldButtonRefs.current[group.id] = el;
-                          }
-                        }}
                         variant="outlined"
                         startIcon={<AddIcon />}
-                        onClick={() => handleAddField(group.id)}
+                        onClick={() => handleAddFieldToGroup(group.id)}
                         sx={{ borderRadius: 2 }}
                       >
-                        Add Field
+                        Add Field to {group.name}
                       </Button>
                     </Box>
-                  </Box>
-                ))}
-            </DndContext>
-          )}
+                  )}
+                </Box>
+              </Paper>
+            ))}
 
-          {/* Add group button */}
-          <Box sx={{ textAlign: "center", mt: 4 }}>
+          {/* Add Group Section */}
+          <Box sx={{ textAlign: "center" }}>
             <Button
               variant="contained"
+              size="large"
               startIcon={<AddIcon />}
               onClick={handleAddGroup}
-              sx={{ borderRadius: 2 }}
+              sx={{ borderRadius: 2, px: 4, py: 1.5 }}
             >
-              Add Group
+              Add New Group
             </Button>
           </Box>
-        </Paper>
+        </Stack>
+
+        {/* Field Types Editor Dialog */}
+        <Dialog
+          open={Boolean(editingFieldTypes)}
+          onClose={() => setEditingFieldTypes(null)}
+          maxWidth="md"
+          fullWidth
+        >
+          <DialogTitle>
+            Configure Field Types
+            {editingFieldTypes && (
+              <Typography variant="body2" color="text.secondary">
+                Field:{" "}
+                {
+                  structure.groups
+                    .flatMap((g) => g.fields)
+                    .find((f) => f.id === editingFieldTypes)?.name
+                }
+              </Typography>
+            )}
+          </DialogTitle>
+          <DialogContent>
+            {editingFieldTypes && (
+              <FieldTypesEditor
+                field={
+                  structure.groups
+                    .flatMap((g) => g.fields)
+                    .find((f) => f.id === editingFieldTypes)!
+                }
+                addFieldType={addFieldType}
+                updateFieldType={updateFieldType}
+                removeFieldType={removeFieldType}
+              />
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setEditingFieldTypes(null)}>Done</Button>
+          </DialogActions>
+        </Dialog>
       </Box>
 
       {/* Group menu */}
@@ -865,6 +1140,11 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
         onClose={handleGroupMenuClose}
       >
         <MenuItem onClick={handleRenameGroup}>Rename Group</MenuItem>
+        <MenuItem onClick={handleToggleGroupCollapsed}>
+          {activeGroup?.collapsedByDefault
+            ? "Show by Default"
+            : "Collapse by Default"}
+        </MenuItem>
         <MenuItem onClick={handleMoveGroupUp}>
           <ArrowUpIcon fontSize="small" sx={{ mr: 1 }} />
           Move Up
@@ -919,36 +1199,26 @@ const EditPageContent: React.FC<EditPageContentProps> = ({
   );
 };
 
-// Sortable Field Item Component
-interface SortableFieldItemProps {
-  field: Field;
-  groupId: string;
-  renamingFieldId: string | null;
-  newFieldName: string;
-  setNewFieldName: (name: string) => void;
-  handleFieldRenameSubmit: (e: React.FormEvent) => Promise<void>;
-  handleFieldRenameInputBlur: () => void;
-  handleFieldMenuOpen: (
-    event: React.MouseEvent<HTMLElement>,
-    field: Field,
-    groupId: string // Added groupId
-  ) => void;
-  // Add field type management methods
-  addFieldType: (
-    fieldId: string,
-    kind: FieldTypeKind,
-    description?: string,
-    dataOptions?: Record<string, string | number>,
-    order?: number
-  ) => Promise<FieldType | null>;
-  updateFieldType: (
-    fieldTypeId: string,
-    updates: Partial<Omit<FieldType, "id" | "fieldId" | "kind">>
-  ) => Promise<boolean>;
-  removeFieldType: (fieldTypeId: string) => Promise<boolean>;
-}
-
-const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
+// Simplified Field Item
+const SortableFieldItem: React.FC<
+  SortableFieldItemProps & {
+    editingFieldTypes: string | null;
+    setEditingFieldTypes: (fieldId: string | null) => void;
+    addFieldType: (
+      fieldId: string,
+      kind: FieldTypeKind,
+      description?: string,
+      dataOptions?: Record<string, string | number>,
+      order?: number
+    ) => Promise<FieldType | null>;
+    updateFieldType: (
+      fieldTypeId: string,
+      updates: Partial<Omit<FieldType, "id" | "fieldId" | "kind">>
+    ) => Promise<boolean>;
+    removeFieldType: (fieldTypeId: string) => Promise<boolean>;
+    getFieldTypeIcon: (kind: FieldTypeKind) => React.ReactElement;
+  }
+> = ({
   field,
   groupId,
   renamingFieldId,
@@ -957,17 +1227,13 @@ const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
   handleFieldRenameSubmit,
   handleFieldRenameInputBlur,
   handleFieldMenuOpen,
-  addFieldType,
-  updateFieldType,
-  removeFieldType,
+  setEditingFieldTypes,
+  getFieldTypeIcon,
 }) => {
-  const { attributes, listeners, setNodeRef, transform, transition } =
+  const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: field.id,
-      data: {
-        groupId,
-        fieldId: field.id,
-      },
+      data: { groupId, fieldId: field.id },
     });
 
   const style = {
@@ -976,221 +1242,207 @@ const SortableFieldItem: React.FC<SortableFieldItemProps> = ({
   };
 
   const renamingFieldRef = useRef<HTMLInputElement>(null);
-  const [showFieldTypes, setShowFieldTypes] = useState(true);
+  const nonCheckFieldTypes = field.fieldTypes.filter(
+    (ft) => ft.kind !== "CHECK"
+  );
+  const isCheckField = nonCheckFieldTypes.length === 0;
+
+  useEffect(() => {
+    if (renamingFieldId === field.id && renamingFieldRef.current) {
+      renamingFieldRef.current.focus();
+    }
+  }, [renamingFieldId, field.id]);
+
+  if (isDragging) {
+    return <Box ref={setNodeRef} style={style} />;
+  }
+
+  return (
+    <Box ref={setNodeRef} style={style}>
+      <CardContent>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <Box {...listeners} sx={{ color: "text.secondary", cursor: "grab" }}>
+            <DragIndicatorIcon />
+          </Box>
+
+          {renamingFieldId === field.id ? (
+            <Box
+              component="form"
+              onSubmit={handleFieldRenameSubmit}
+              sx={{ flex: 1 }}
+            >
+              <TextField
+                fullWidth
+                variant="outlined"
+                size="small"
+                value={newFieldName}
+                onChange={(e) => setNewFieldName(e.target.value)}
+                onBlur={handleFieldRenameInputBlur}
+                inputRef={renamingFieldRef}
+              />
+            </Box>
+          ) : (
+            <>
+              <Typography variant="h6" sx={{ flex: 1 }}>
+                {field.name}
+              </Typography>
+
+              {/* Field Type Summary */}
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                {nonCheckFieldTypes.map((ft) => (
+                  <Chip
+                    key={ft.id}
+                    icon={getFieldTypeIcon(ft.kind as FieldTypeKind)}
+                    label={ft.description || ft.kind}
+                    size="small"
+                    variant="outlined"
+                  />
+                ))}
+              </Box>
+            </>
+          )}
+
+          <IconButton
+            size="small"
+            onClick={(e) => handleFieldMenuOpen(e, field, groupId)}
+            aria-label="field options"
+          >
+            <MoreVertIcon />
+          </IconButton>
+        </Box>
+      </CardContent>
+
+      <CardActions sx={{ justifyContent: "space-between", px: 2, pb: 2 }}>
+        {isCheckField ? (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Simple Field
+            </Typography>
+            <Tooltip title="A basic field that provides a simple checkbox for binary choices. Users can mark items as complete/incomplete, done/pending, or any other yes/no status. No additional configuration needed.">
+              <InfoIcon
+                fontSize="small"
+                sx={{ color: "text.disabled", cursor: "help" }}
+              />
+            </Tooltip>
+          </Box>
+        ) : (
+          <Typography variant="body2" color="text.secondary">
+            {nonCheckFieldTypes.length} Type
+            {nonCheckFieldTypes.length !== 1 ? "s" : ""}
+          </Typography>
+        )}
+
+        <Button
+          size="small"
+          startIcon={<SettingsIcon />}
+          onClick={() => setEditingFieldTypes(field.id)}
+          sx={{ borderRadius: 1 }}
+        >
+          Configure Types
+        </Button>
+      </CardActions>
+    </Box>
+  );
+};
+
+// Dedicated Field Types Editor Component
+const FieldTypesEditor: React.FC<{
+  field: Field;
+  addFieldType: (
+    fieldId: string,
+    kind: FieldTypeKind,
+    description?: string
+  ) => Promise<FieldType | null>;
+  updateFieldType: (
+    fieldTypeId: string,
+    updates: Partial<FieldType>
+  ) => Promise<boolean>;
+  removeFieldType: (fieldTypeId: string) => Promise<boolean>;
+}> = ({ field, addFieldType, updateFieldType, removeFieldType }) => {
   const [fieldTypeMenuAnchor, setFieldTypeMenuAnchor] =
     useState<null | HTMLElement>(null);
 
-  // Handle adding a new field type
   const handleAddFieldType = async (fieldTypeKind: FieldTypeKind) => {
     try {
       await addFieldType(field.id, fieldTypeKind);
-      // Close the menu
       setFieldTypeMenuAnchor(null);
     } catch (error) {
       console.error("Error adding field type:", error);
     }
   };
 
-  // Handle field type update
-  const handleFieldTypeUpdate = async (
-    fieldTypeId: string,
-    updates: Partial<FieldType>
-  ) => {
-    try {
-      await updateFieldType(fieldTypeId, updates);
-    } catch (error) {
-      console.error("Error updating field type:", error);
-    }
-  };
-
-  // Handle field type deletion
-  const handleDeleteFieldType = async (fieldTypeId: string) => {
-    try {
-      await removeFieldType(fieldTypeId);
-    } catch (error) {
-      console.error("Error deleting field type:", error);
-    }
-  };
-
-  useEffect(() => {
-    if (renamingFieldId === field.id && renamingFieldRef.current) {
-      renamingFieldRef.current.focus();
-    }
-  }, [renamingFieldId, field.id, renamingFieldRef]);
-
   return (
-    <Box
-      ref={setNodeRef}
-      style={style}
-      sx={{
-        p: 2,
-        mb: 2,
-        borderRadius: 2,
-        bgcolor: "background.paper",
-        border: "1px solid",
-        borderColor: "divider",
-        display: "flex",
-        flexDirection: "column",
-        position: "relative",
-        "&:hover": {
-          "& .field-actions": {
-            opacity: 1,
-          },
-          "& .field-insert": {
-            opacity: 1,
-          },
-        },
-      }}
-      {...attributes}
-    >
-      {/* Field header */}
-      <Box sx={{ display: "flex", alignItems: "center", width: "100%" }}>
-        <Box
-          {...listeners}
-          sx={{
-            mr: 2,
-            color: "text.secondary",
-            cursor: "grab",
-          }}
-        >
-          <DragIndicatorIcon />
-        </Box>
-
-        {renamingFieldId === field.id ? (
-          <Box
-            component="form"
-            onSubmit={handleFieldRenameSubmit}
-            sx={{ flexGrow: 1 }}
+    <Stack spacing={3}>
+      {/* Existing Field Types */}
+      {field.fieldTypes
+        .filter((ft) => ft.kind !== "CHECK")
+        .map((fieldType) => (
+          <Paper
+            key={fieldType.id}
+            variant="outlined"
+            sx={{ p: 2, borderRadius: 2 }}
           >
-            <TextField
-              fullWidth
-              variant="outlined"
-              size="small"
-              value={newFieldName}
-              onChange={(e) => setNewFieldName(e.target.value)}
-              onBlur={handleFieldRenameInputBlur}
-              inputRef={renamingFieldRef}
+            <Box
+              sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}
+            >
+              <Typography variant="subtitle1" fontWeight="medium">
+                {fieldType.description || fieldType.kind}
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={() => removeFieldType(fieldType.id)}
+                color="error"
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
+
+            <FieldTypeFactory
+              fieldType={fieldType}
+              value={null}
+              onChange={() => {}}
+              mode="edit"
+              onFieldTypeUpdate={(updates) =>
+                updateFieldType(fieldType.id, updates)
+              }
             />
-          </Box>
-        ) : (
-          <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
-            {field.name}
-          </Typography>
-        )}
+          </Paper>
+        ))}
 
-        <Box
-          className="field-actions"
-          sx={{
-            opacity: 0,
-            transition: "opacity 0.2s",
-            display: "flex",
-          }}
+      {/* Add Field Type */}
+      <Box sx={{ textAlign: "center" }}>
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          onClick={(e) => setFieldTypeMenuAnchor(e.currentTarget)}
+          sx={{ borderRadius: 2 }}
         >
-          <Button
-            size="small"
-            onClick={() => setShowFieldTypes(!showFieldTypes)}
-            sx={{ mr: 1 }}
-          >
-            {showFieldTypes ? "Hide Details" : "Show Details"}
-          </Button>
-          <IconButton
-            size="small"
-            onClick={(e) => handleFieldMenuOpen(e, field, groupId)} // Pass groupId here
-            aria-label="field options"
-          >
-            <MoreVertIcon />
-          </IconButton>
-        </Box>
+          Add Field Type
+        </Button>
       </Box>
 
-      {/* Field Types section */}
-      <Collapse in={showFieldTypes}>
-        <Box sx={{ mt: 2, pl: 4 }}>
-          {/* List existing field types */}
-          {field.fieldTypes
-            .filter((ft) => ft.kind !== "CHECK") // Don't show CHECK field type
-            .map((fieldType) => (
-              <Box
-                key={fieldType.id}
-                sx={{
-                  mb: 2,
-                  p: 1,
-                  border: "1px dashed",
-                  borderColor: "divider",
-                  borderRadius: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    mb: 1,
-                  }}
-                >
-                  <Typography variant="body2" fontWeight="medium">
-                    {fieldType.description || fieldType.kind}
-                  </Typography>
-                  <IconButton
-                    size="small"
-                    onClick={() => handleDeleteFieldType(fieldType.id)}
-                    sx={{ p: 0.5 }}
-                  >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-
-                <FieldTypeFactory
-                  fieldType={fieldType}
-                  value={null} // No value needed in edit mode
-                  onChange={() => {}} // No onChange needed in edit mode
-                  mode="edit"
-                  onFieldTypeUpdate={(updates) =>
-                    handleFieldTypeUpdate(fieldType.id, updates)
-                  }
-                />
-              </Box>
-            ))}
-
-          {/* Add new field type - centered button */}
-          <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<AddIcon />}
-              onClick={(e) => setFieldTypeMenuAnchor(e.currentTarget)}
-              sx={{ borderRadius: 2 }}
-            >
-              Add Field Type
-            </Button>
-          </Box>
-
-          {/* Field Type selection menu */}
-          <Menu
-            anchorEl={fieldTypeMenuAnchor}
-            open={Boolean(fieldTypeMenuAnchor)}
-            onClose={() => setFieldTypeMenuAnchor(null)}
-          >
-            <MenuItem onClick={() => handleAddFieldType("NUMBER_NAVIGATION")}>
-              Number with Navigation
-            </MenuItem>
-            <MenuItem onClick={() => handleAddFieldType("NUMBER")}>
-              Number
-            </MenuItem>
-            <MenuItem onClick={() => handleAddFieldType("TIME_SELECT")}>
-              Time Select
-            </MenuItem>
-            <MenuItem onClick={() => handleAddFieldType("SEVERITY")}>
-              Severity
-            </MenuItem>
-            <MenuItem onClick={() => handleAddFieldType("RANGE")}>
-              Range
-            </MenuItem>
-          </Menu>
-        </Box>
-      </Collapse>
-    </Box>
+      {/* Field Type Menu */}
+      <Menu
+        anchorEl={fieldTypeMenuAnchor}
+        open={Boolean(fieldTypeMenuAnchor)}
+        onClose={() => setFieldTypeMenuAnchor(null)}
+      >
+        <MenuItem onClick={() => handleAddFieldType("NUMBER_NAVIGATION")}>
+          Number with Navigation
+        </MenuItem>
+        <MenuItem onClick={() => handleAddFieldType("NUMBER")}>Number</MenuItem>
+        <MenuItem onClick={() => handleAddFieldType("TIME_SELECT")}>
+          Time Select
+        </MenuItem>
+        <MenuItem onClick={() => handleAddFieldType("SEVERITY")}>
+          Severity
+        </MenuItem>
+        <MenuItem onClick={() => handleAddFieldType("RANGE")}>Range</MenuItem>
+        <MenuItem onClick={() => handleAddFieldType("CUSTOM_SCALE")}>
+          Custom Scale
+        </MenuItem>
+      </Menu>
+    </Stack>
   );
 };
 

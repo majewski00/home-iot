@@ -35,6 +35,7 @@
       "@apiRoutes": ["./commons/routes.ts"],
       "@helpers/*": ["./commons/helpers/*"],
       "@src-types/*": ["./commons/types/*"],
+      "@iconPicker": ["./frontend/components/IconPicker"],
 
       // specific for frontend -- // TODO: move to separate tsconfig
       "@apiHandler": ["./frontend/services/apis/handler.ts"]

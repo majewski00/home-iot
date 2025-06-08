@@ -11,6 +11,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import { Action } from "@src-types/journal/journal.types";
 import { UseJournalActionsReturn } from "../../hooks/useJournalActions";
 import NumberInputModal from "./NumberInputModal";
+import { LazyIcon } from "@iconPicker";
 
 interface ActionItemProps {
   action: Action;
@@ -119,50 +120,99 @@ const ActionItem: React.FC<ActionItemProps> = ({
           </Box>
         )}
 
-        <Typography
-          variant="subtitle1"
+        {/* Header Section - Fixed Height */}
+        <Box
           sx={{
-            mb: 1,
-            fontWeight: "bold",
-            pr: showDeleteButton ? 5 : 1, // Adjust padding based on delete button presence
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 1,
+            height: 40, // Fixed height for consistency
+            mb: 0.5,
           }}
         >
-          {action.name}
-        </Typography>
-
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{
-            mb: 1.5,
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {actionDetails?.fieldTypeName || ""}
-        </Typography>
-
-        {/* Optional: Add visual indicator for completed daily actions */}
-        {isCompletedToday && (
+          {action.iconName && (
+            <LazyIcon
+              name={action.iconName}
+              color={
+                action.iconColor === "inherit"
+                  ? "inherit"
+                  : (action.iconColor as any)
+              }
+              sx={{
+                fontSize: "1.5rem",
+                flexShrink: 0,
+                mt: 0.25,
+                color:
+                  action.iconColor === "brown"
+                    ? "#8D6E63"
+                    : action.iconColor === "yellow"
+                    ? "#FFC107"
+                    : undefined,
+              }}
+            />
+          )}
           <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ position: "absolute", bottom: 8, right: 8 }}
+            variant="subtitle1"
+            sx={{
+              fontWeight: "bold",
+              pr: showDeleteButton ? 5 : 1,
+              lineHeight: 1.2,
+              overflow: "hidden",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              wordBreak: "break-word",
+            }}
           >
-            Completed today
+            {action.name}
           </Typography>
-        )}
+        </Box>
 
+        {/* Description Section - Fixed Height */}
+        <Box sx={{ height: 32, mb: 0.5 }}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{
+              ml: action.iconName ? 4 : 0,
+              overflow: "hidden",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              lineHeight: 1.2,
+              wordBreak: "break-word",
+            }}
+          >
+            {actionDetails?.fieldTypeName || ""}
+          </Typography>
+        </Box>
+
+        {/* Status/Action Section - Fixed Height */}
         <Box
           sx={{
             mt: "auto",
+            height: 32,
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            height: 40,
+            position: "relative",
           }}
         >
           {isRegistering && <CircularProgress size={24} />}
+
+          {/* Completed indicator */}
+          {isCompletedToday && !isRegistering && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{
+                textAlign: "center",
+                fontStyle: "italic",
+              }}
+            >
+              Completed today
+            </Typography>
+          )}
         </Box>
       </Paper>
 

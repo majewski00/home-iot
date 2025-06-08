@@ -237,8 +237,21 @@ export default (router: Router) => {
         userId: res.locals.user.sub,
       });
 
-      const { name, description, fieldId, options, isDailyAction } = req.body;
-      routeLogger.info("Attempting to add new action", { name, fieldId });
+      const {
+        name,
+        description,
+        fieldId,
+        options,
+        isDailyAction,
+        iconName,
+        iconColor,
+      } = req.body;
+      routeLogger.info("Attempting to add new action", {
+        name,
+        fieldId,
+        iconName,
+        iconColor,
+      });
 
       try {
         routeLogger.debug("Fetching journal structure for validation");
@@ -308,6 +321,8 @@ export default (router: Router) => {
           createdAt: timestamp,
           updatedAt: timestamp,
           isDailyAction: isDailyAction || false,
+          iconName: iconName || null, // Save iconName, default to null
+          iconColor: iconColor || "inherit", // Save iconColor, default to "inherit"
         };
 
         routeLogger.debug("Creating action in DynamoDB", { actionId: id });
@@ -523,7 +538,7 @@ export default (router: Router) => {
     }
   );
 
-  // * Reorder an action
+  // * Reorder an action (minimal reordering - only update affected actions)
   router.post(
     ROUTES.JOURNAL_REORDER_ACTION,
     async (
@@ -537,28 +552,130 @@ export default (router: Router) => {
         actionId: id,
       });
 
-      routeLogger.info("Reordering action", { actionId: id, newOrder: order });
+      routeLogger.info("Reordering action with minimal updates", {
+        actionId: id,
+        newOrder: order,
+      });
 
       try {
-        routeLogger.debug("Updating action order in DynamoDB");
-        await updateItem(
+        // Fetch all user actions to perform minimal reordering
+        routeLogger.debug("Fetching all user actions for minimal reordering");
+        const actionsFromDb = await queryItems<Action & BaseItem>(
           process.env.DYNAMODB_TABLE_NAME!,
-          {
-            PK: `USER#${res.locals.user.sub}#ACTIONS`,
-            SK: `ACTION#${id}`,
-          },
-          {
-            order: order,
-            updatedAt: new Date().toISOString(),
-          }
+          `USER#${res.locals.user.sub}#ACTIONS`,
+          "ACTION#"
         );
 
-        routeLogger.info("Action reordered successfully");
+        if (actionsFromDb.length === 0) {
+          routeLogger.warn("No actions found for user");
+          res.status(404).send({ message: "No actions found." });
+          return;
+        }
+
+        // Strip base items and sort by current order
+        const actions = actionsFromDb
+          .map(stripBaseItem)
+          .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+        // Find the dragged action
+        const draggedActionIndex = actions.findIndex(
+          (action) => action.id === id
+        );
+        if (draggedActionIndex === -1) {
+          routeLogger.warn("Action to reorder not found", { actionId: id });
+          res.status(404).send({ message: "Action not found." });
+          return;
+        }
+
+        const draggedAction = actions[draggedActionIndex];
+        const oldOrder = draggedActionIndex;
+        const newOrder = Math.max(0, Math.min(order, actions.length - 1));
+
+        // If no change needed
+        if (oldOrder === newOrder) {
+          routeLogger.info("No order change needed");
+          res.status(200).send({ success: true });
+          return;
+        }
+
+        // Calculate which actions need their order updated
+        const updatePromises: Promise<any>[] = [];
+        const timestamp = new Date().toISOString();
+
+        if (oldOrder < newOrder) {
+          // Moving down: shift actions between oldOrder+1 and newOrder up by 1
+          for (let i = oldOrder + 1; i <= newOrder; i++) {
+            if (i < actions.length) {
+              updatePromises.push(
+                updateItem(
+                  process.env.DYNAMODB_TABLE_NAME!,
+                  {
+                    PK: `USER#${res.locals.user.sub}#ACTIONS`,
+                    SK: `ACTION#${actions[i].id}`,
+                  },
+                  {
+                    order: i - 1,
+                    updatedAt: timestamp,
+                  }
+                )
+              );
+            }
+          }
+        } else {
+          // Moving up: shift actions between newOrder and oldOrder-1 down by 1
+          for (let i = newOrder; i < oldOrder; i++) {
+            updatePromises.push(
+              updateItem(
+                process.env.DYNAMODB_TABLE_NAME!,
+                {
+                  PK: `USER#${res.locals.user.sub}#ACTIONS`,
+                  SK: `ACTION#${actions[i].id}`,
+                },
+                {
+                  order: i + 1,
+                  updatedAt: timestamp,
+                }
+              )
+            );
+          }
+        }
+
+        // Update the dragged action's order
+        updatePromises.push(
+          updateItem(
+            process.env.DYNAMODB_TABLE_NAME!,
+            {
+              PK: `USER#${res.locals.user.sub}#ACTIONS`,
+              SK: `ACTION#${draggedAction.id}`,
+            },
+            {
+              order: newOrder,
+              updatedAt: timestamp,
+            }
+          )
+        );
+
+        // Execute all updates concurrently
+        routeLogger.debug("Updating action orders with minimal changes", {
+          updatesCount: updatePromises.length,
+          totalActions: actions.length,
+          oldOrder,
+          newOrder,
+        });
+
+        await Promise.all(updatePromises);
+
+        routeLogger.info(
+          "Actions reordered successfully with minimal updates",
+          {
+            updatedActionsCount: updatePromises.length,
+          }
+        );
         res.status(200).send({ success: true });
       } catch (error) {
-        routeLogger.error("Failed to reorder action", { error });
+        routeLogger.error("Failed to reorder actions", { error });
         res.status(500).send({
-          message: "Failed to reorder action.",
+          message: "Failed to reorder actions.",
           error: error as string,
         });
       }

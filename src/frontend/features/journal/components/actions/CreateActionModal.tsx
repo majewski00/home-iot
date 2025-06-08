@@ -11,10 +11,13 @@ import {
   CircularProgress,
   FormControlLabel,
   Checkbox,
+  IconButton,
 } from "@mui/material";
 import { UseJournalActionsReturn } from "../../hooks/useJournalActions";
 import SelectFieldModal from "./SelectFieldModal";
 import { FieldTypeKind, Action } from "@src-types/journal/journal.types";
+import IconPicker, { LazyIcon } from "@iconPicker";
+import { Add as AddIcon } from "@mui/icons-material";
 
 interface CreateActionModalProps {
   open: boolean;
@@ -58,6 +61,11 @@ const CreateActionModal: React.FC<CreateActionModalProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDailyAction, setIsDailyAction] = useState(false);
+
+  // Add icon state
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(null);
+  const [selectedIconColor, setSelectedIconColor] = useState<string>("inherit");
+  const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
 
   const handleOpenSelectField = () => {
     setIsSelectFieldModalOpen(true);
@@ -136,7 +144,6 @@ const CreateActionModal: React.FC<CreateActionModalProps> = ({
         return;
       }
 
-      // If using custom value, the increment is not needed
       const increment = useCustomValue ? undefined : incrementValue;
 
       await createAction(
@@ -144,7 +151,9 @@ const CreateActionModal: React.FC<CreateActionModalProps> = ({
         selectedField.fieldId,
         selectedFieldType.id,
         increment,
-        isDailyAction
+        isDailyAction,
+        selectedIcon,
+        selectedIconColor
       );
 
       onActionCreated();
@@ -165,11 +174,18 @@ const CreateActionModal: React.FC<CreateActionModalProps> = ({
     setUseCustomValue(false);
     setError(null);
     setIsDailyAction(false);
+    setSelectedIcon(null);
+    setSelectedIconColor("inherit");
   };
 
   const handleClose = () => {
     resetForm();
     onClose();
+  };
+
+  const handleIconSelect = (iconName: string | null, color: string) => {
+    setSelectedIcon(iconName);
+    setSelectedIconColor(color);
   };
 
   return (
@@ -178,15 +194,79 @@ const CreateActionModal: React.FC<CreateActionModalProps> = ({
         <DialogTitle>Create New Action</DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 1 }}>
-            <TextField
-              label="Action Name"
-              fullWidth
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              margin="normal"
-              error={!!error && !name.trim()}
-              helperText={!name.trim() && error ? "Name is required" : ""}
-            />
+            {/* Action Name with Icon Preview */}
+            <Box
+              sx={{ display: "flex", gap: 2, alignItems: "flex-start", mb: 2 }}
+            >
+              <Box sx={{ flex: 1 }}>
+                <TextField
+                  label="Action Name"
+                  fullWidth
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  margin="normal"
+                  error={!!error && !name.trim()}
+                  helperText={!name.trim() && error ? "Name is required" : ""}
+                />
+              </Box>
+
+              {/* Icon Preview and Picker */}
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 1,
+                  mt: 2,
+                }}
+              >
+                <IconButton
+                  onClick={() => setIsIconPickerOpen(true)}
+                  sx={{
+                    width: 56,
+                    height: 56,
+                    border: "2px dashed",
+                    borderColor: selectedIcon ? "primary.main" : "divider",
+                    borderRadius: 2,
+                    "&:hover": {
+                      borderColor: "primary.main",
+                      backgroundColor: "action.hover",
+                    },
+                  }}
+                >
+                  {selectedIcon ? (
+                    <LazyIcon
+                      name={selectedIcon}
+                      color={
+                        selectedIconColor === "inherit"
+                          ? "inherit"
+                          : (selectedIconColor as any)
+                      }
+                      sx={{
+                        fontSize: "2rem",
+                        color:
+                          selectedIconColor === "brown"
+                            ? "#8D6E63"
+                            : selectedIconColor === "yellow"
+                            ? "#FFC107"
+                            : undefined,
+                      }}
+                    />
+                  ) : (
+                    <AddIcon
+                      sx={{ fontSize: "1.5rem", color: "text.disabled" }}
+                    />
+                  )}
+                </IconButton>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  align="center"
+                >
+                  {selectedIcon ? "Change Icon" : "Add Icon"}
+                </Typography>
+              </Box>
+            </Box>
 
             <Box sx={{ mt: 2, mb: 2 }}>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -431,6 +511,14 @@ const CreateActionModal: React.FC<CreateActionModalProps> = ({
         onFieldSelected={handleFieldSelected}
         getEligibleFields={getEligibleFields}
         existingActions={existingActions} // Pass existing actions to the modal
+      />
+
+      <IconPicker
+        open={isIconPickerOpen}
+        onClose={() => setIsIconPickerOpen(false)}
+        onSelect={handleIconSelect}
+        selectedValue={selectedIcon}
+        selectedColor={selectedIconColor}
       />
     </>
   );

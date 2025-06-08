@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -8,6 +8,8 @@ import {
   useTheme,
   IconButton,
   CircularProgress,
+  Snackbar,
+  Alert,
 } from "@mui/material";
 import { ArrowBack as ArrowBackIcon } from "@mui/icons-material";
 import AddIcon from "@mui/icons-material/Add";
@@ -61,21 +63,91 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
 
+  // Add toast state
+  const [toastState, setToastState] = useState<{
+    open: boolean;
+    actionName: string;
+    actionId: string;
+    value?: number;
+    timeLeft: number;
+  }>({
+    open: false,
+    actionName: "",
+    actionId: "",
+    timeLeft: 0,
+  });
+
   const {
     actions,
     loading,
     error,
     createAction,
     getEligibleFields,
-    registerAction,
+    registerAction: originalRegisterAction,
     deleteAction,
     getActionDetails,
     refreshActions,
     updateActionOrder,
+    isActionCompletedToday,
   } = useJournalActions(date, structure, entry, refreshEntry);
 
-  // State to track actions with their order
   const [orderedActions, setOrderedActions] = useState<Action[]>([]);
+
+  // Toast timer effect
+  useEffect(() => {
+    if (!toastState.open) return;
+
+    const timer = setInterval(() => {
+      setToastState((prev) => {
+        if (prev.timeLeft <= 100) {
+          // Auto-confirm when time runs out
+          if (prev.actionId) {
+            originalRegisterAction(prev.actionId, prev.value);
+          }
+          return { ...prev, open: false, timeLeft: 0 };
+        }
+        return { ...prev, timeLeft: prev.timeLeft - 100 };
+      });
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, [toastState.open, originalRegisterAction]);
+
+  const handleToastConfirm = useCallback(async () => {
+    if (toastState.actionId) {
+      await originalRegisterAction(toastState.actionId, toastState.value);
+    }
+    setToastState((prev) => ({ ...prev, open: false }));
+  }, [toastState, originalRegisterAction]);
+
+  const handleToastCancel = useCallback(() => {
+    setToastState((prev) => ({ ...prev, open: false }));
+  }, []);
+
+  // Override the registerAction function to show toast first
+  const registerAction = useCallback(
+    async (actionId: string, value?: number) => {
+      const action = actions.find((a) => a.id === actionId);
+      if (!action) return false;
+
+      // If it's a daily action that's already completed today, don't proceed
+      if (action.isDailyAction && isActionCompletedToday(action)) {
+        return false;
+      }
+
+      // Show toast
+      setToastState({
+        open: true,
+        actionName: action.name,
+        actionId,
+        value,
+        timeLeft: 3000,
+      });
+
+      return true;
+    },
+    [actions, isActionCompletedToday]
+  );
 
   // Set up DnD sensors
   const sensors = useSensors(
@@ -139,7 +211,9 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
         const oldIndex = validItems.findIndex((item) => item.id === active.id);
         const newIndex = validItems.findIndex((item) => item.id === over.id);
 
-        // Update the order property for valid items only
+        if (oldIndex === -1 || newIndex === -1) return items;
+
+        // Apply arrayMove to get the final reordered array
         const reordered = arrayMove(validItems, oldIndex, newIndex).map(
           (item, index) => ({
             ...item,
@@ -147,12 +221,12 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
           })
         );
 
-        // Save the new order to the backend for each action
-        reordered.forEach((action) => {
-          if (action.order !== undefined) {
-            updateActionOrder(action.id, action.order);
-          }
-        });
+        // Calculate the correct backend position
+        // The backend expects the final position after the splice operations
+        // arrayMove simulates: splice(oldIndex, 1) then splice(newIndex, 0, item)
+        // So newIndex is the correct position to send
+        const draggedActionId = active.id as string;
+        updateActionOrder(draggedActionId, newIndex);
 
         // Combine reordered valid actions with unchanged invalid actions
         return [...reordered, ...invalidItems];
@@ -300,6 +374,7 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
                       registerAction={registerAction}
                       deleteAction={deleteAction}
                       getActionDetails={getActionDetails}
+                      isActionCompletedToday={isActionCompletedToday}
                     />
                   ))}
                 </Box>
@@ -309,7 +384,7 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
         </Paper>
 
         {/* Invalid Actions Section */}
-        {invalidActions.length > 0 && (
+        {invalidActions.length > 0 && !loading && (
           <Paper
             elevation={0}
             sx={{
@@ -425,6 +500,49 @@ const AllActionsPage: React.FC<AllActionsPageProps> = ({
         getEligibleFields={getEligibleFields}
         existingActions={actions}
       />
+
+      {/* Toast Notification */}
+      <Snackbar
+        open={toastState.open}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+        sx={{ top: "20px !important" }}
+      >
+        <Alert
+          severity="info"
+          action={
+            <Box sx={{ display: "flex", gap: 1 }}>
+              <Button color="inherit" size="small" onClick={handleToastConfirm}>
+                Confirm
+              </Button>
+              <Button color="inherit" size="small" onClick={handleToastCancel}>
+                Cancel
+              </Button>
+            </Box>
+          }
+          sx={{ minWidth: "300px" }}
+        >
+          {toastState.actionName} action pressed
+          <Box sx={{ width: "100%", mt: 1 }}>
+            <Box
+              sx={{
+                height: 4,
+                backgroundColor: "rgba(255,255,255,0.3)",
+                borderRadius: 2,
+                overflow: "hidden",
+              }}
+            >
+              <Box
+                sx={{
+                  height: "100%",
+                  backgroundColor: "primary.main",
+                  width: `${((3000 - toastState.timeLeft) / 3000) * 100}%`,
+                  transition: "width 0.1s linear",
+                }}
+              />
+            </Box>
+          </Box>
+        </Alert>
+      </Snackbar>
     </Container>
   );
 };
@@ -437,6 +555,7 @@ interface SortableActionItemProps {
   registerAction: (actionId: string, value?: number) => Promise<boolean>;
   deleteAction: (actionId: string) => Promise<boolean>;
   getActionDetails: (action: Action) => any;
+  isActionCompletedToday: (action: Action) => boolean;
 }
 
 const SortableActionItem: React.FC<SortableActionItemProps> = ({
@@ -446,6 +565,7 @@ const SortableActionItem: React.FC<SortableActionItemProps> = ({
   registerAction,
   deleteAction,
   getActionDetails,
+  isActionCompletedToday,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({
@@ -523,6 +643,9 @@ const SortableActionItem: React.FC<SortableActionItemProps> = ({
         registerAction={registerAction}
         deleteAction={deleteAction}
         getActionDetails={getActionDetails}
+        isCompletedToday={
+          action.isDailyAction && isActionCompletedToday(action)
+        }
       />
     </Box>
   );

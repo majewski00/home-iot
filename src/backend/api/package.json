@@ -1,6 +1,6 @@
 {
   "name": "home-iot-backend-lambda",
-  "version": "0.1.2",
+  "version": "0.2.4",
   "private": true,
   "type": "commonjs"
 }

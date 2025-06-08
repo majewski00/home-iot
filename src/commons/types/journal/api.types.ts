@@ -41,6 +41,8 @@ export interface JournalAddActionBody {
     isCustom?: boolean;
   }[];
   isDailyAction?: boolean;
+  iconName?: string | null; // Icon name from Material-UI icons
+  iconColor?: string; // Icon color (inherit, primary, secondary, etc.)
 }
 
 export interface JournalRemoveActionBody {

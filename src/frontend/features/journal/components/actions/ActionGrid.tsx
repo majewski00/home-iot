@@ -13,16 +13,12 @@ import {
   Snackbar,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useJournalActions } from "../../hooks/useJournalActions";
 import ActionItem from "./ActionItem";
 import CreateActionModal from "./CreateActionModal";
 import { Journal, JournalEntry } from "@src-types/journal/journal.types";
-
-// Maximum number of actions to display in the main view
-const MAX_VISIBLE_ACTIONS = 4;
 
 interface ActionGridProps {
   date: string;
@@ -43,6 +39,17 @@ const ActionGrid: React.FC<ActionGridProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const isTablet = useMediaQuery(theme.breakpoints.down("md"));
+
+  // Responsive maximum visible actions
+  const getMaxVisibleActions = () => {
+    if (isMobile) return 2; // 2 actions per row on mobile
+    if (isTablet) return 3; // 3 actions per row on tablet
+    return 4; // 4 actions per row on desktop
+  };
+
+  const MAX_VISIBLE_ACTIONS = getMaxVisibleActions();
+
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   // Add toast state
@@ -91,6 +98,13 @@ const ActionGrid: React.FC<ActionGridProps> = ({
 
     return () => clearInterval(timer);
   }, [toastState.open, originalRegisterAction]);
+
+  const handleToastConfirm = useCallback(async () => {
+    if (toastState.actionId) {
+      await originalRegisterAction(toastState.actionId, toastState.value);
+    }
+    setToastState((prev) => ({ ...prev, open: false }));
+  }, [toastState, originalRegisterAction]);
 
   // Override the registerAction function to show toast first
   const registerAction = useCallback(
@@ -141,7 +155,7 @@ const ActionGrid: React.FC<ActionGridProps> = ({
     return 0;
   });
 
-  // Get visible actions (first MAX_VISIBLE_ACTIONS)
+  // Get visible actions (responsive count)
   const visibleActions = sortedValidActions.slice(0, MAX_VISIBLE_ACTIONS);
   const hasMoreActions =
     sortedValidActions.length > MAX_VISIBLE_ACTIONS ||
@@ -272,8 +286,10 @@ const ActionGrid: React.FC<ActionGridProps> = ({
                   flexGrow: 0,
                   flexShrink: 0,
                   flexBasis: {
-                    xs: `calc(50% - ${theme.spacing(1)})`,
-                    sm: `calc(25% - ${theme.spacing((2 / 4) * 3)})`,
+                    xs: `calc(50% - ${theme.spacing(1)})`, // 2 per row on mobile
+                    sm: `calc(50% - ${theme.spacing(1)})`, // 2 per row on small screens
+                    md: `calc(33.333% - ${theme.spacing(4 / 3)})`, // 3 per row on tablet
+                    lg: `calc(25% - ${theme.spacing(1.5)})`, // 4 per row on desktop
                   },
                   boxSizing: "border-box",
                 }}
@@ -312,9 +328,14 @@ const ActionGrid: React.FC<ActionGridProps> = ({
         <Alert
           severity="info"
           action={
-            <Button color="inherit" size="small" onClick={handleToastCancel}>
-              Cancel
-            </Button>
+            <Box sx={{ display: "flex", gap: 1 }}>
+              <Button color="inherit" size="small" onClick={handleToastConfirm}>
+                Confirm
+              </Button>
+              <Button color="inherit" size="small" onClick={handleToastCancel}>
+                Cancel
+              </Button>
+            </Box>
           }
           sx={{ minWidth: "300px" }}
         >

@@ -21,7 +21,9 @@ export interface UseJournalActionsReturn {
     fieldId: string,
     fieldTypeId: string,
     incrementValue?: number,
-    isDailyAction?: boolean
+    isDailyAction?: boolean,
+    iconName?: string | null,
+    iconColor?: string
   ) => Promise<Action>;
   deleteAction: (actionId: string) => Promise<boolean>;
   updateActionOrder: (actionId: string, newOrder: number) => Promise<boolean>;
@@ -45,7 +47,7 @@ export interface UseJournalActionsReturn {
     currentValue: any;
     incrementValue?: number;
     isCustom: boolean;
-    validation?: ActionValidation; // Add validation to details
+    validation?: ActionValidation;
   } | null;
   refreshActions: () => Promise<void>;
 }
@@ -146,6 +148,25 @@ export const useJournalActions = (
     setLoading(false);
   }, [rawActions, structure, loading]);
 
+  // Function to update action completion status locally
+  const updateActionCompletionStatus = useCallback(
+    (actionId: string, isCompleted: boolean) => {
+      const today = new Date().toISOString().split("T")[0];
+
+      setRawActions((prev) =>
+        prev.map((action) =>
+          action.id === actionId
+            ? {
+                ...action,
+                lastTriggeredDate: isCompleted ? today : undefined,
+              }
+            : action
+        )
+      );
+    },
+    []
+  );
+
   // Register an action
   const registerAction = useCallback(
     async (actionId: string, value?: number) => {
@@ -171,6 +192,12 @@ export const useJournalActions = (
 
       try {
         await journalApi.registerAction(actionId, value);
+
+        // If it's a daily action, update the completion status locally
+        if (actionToRegister.isDailyAction) {
+          updateActionCompletionStatus(actionId, true);
+        }
+
         // Refresh the journal entry to reflect the changes
         refreshEntry();
         return true;
@@ -179,7 +206,7 @@ export const useJournalActions = (
         return false;
       }
     },
-    [refreshEntry, actions]
+    [refreshEntry, actions, updateActionCompletionStatus]
   );
 
   // Create a new action
@@ -189,7 +216,9 @@ export const useJournalActions = (
       fieldId: string,
       fieldTypeId: string,
       incrementValue?: number,
-      isDailyAction?: boolean
+      isDailyAction?: boolean,
+      iconName?: string | null, // Add iconName
+      iconColor?: string // Add iconColor
     ) => {
       try {
         // For custom values, explicitly set isCustom to true and increment to null
@@ -209,6 +238,8 @@ export const useJournalActions = (
             },
           ],
           isDailyAction: isDailyAction || false,
+          iconName: iconName, // Pass iconName
+          iconColor: iconColor, // Pass iconColor
         });
         // Add the new action to rawActions, validation will occur in useEffect
         setRawActions((prev) => [...prev, newAction]);
@@ -237,28 +268,57 @@ export const useJournalActions = (
   const updateActionOrder = useCallback(
     async (actionId: string, newOrder: number) => {
       try {
-        // Find the action to update in rawActions
-        const actionToUpdate = rawActions.find(
-          (action) => action.id === actionId
-        );
-        if (!actionToUpdate) return false;
-
         // Call the API to update the action order in the backend
         await journalApi.reorderAction(actionId, newOrder);
 
-        // Create a new action object with the updated order
-        const updatedAction = {
-          ...actionToUpdate,
-          order: newOrder,
-        };
+        // Optimistically update the local state with minimal reordering
+        setRawActions((prev) => {
+          // Sort by current order first
+          const sorted = [...prev].sort(
+            (a, b) => (a.order || 0) - (b.order || 0)
+          );
 
-        // Update the rawActions array locally
-        setRawActions((prev) =>
-          prev.map((action) =>
-            action.id === actionId ? updatedAction : action
-          )
-        );
-        // Validation will re-run due to rawActions change
+          // Find the action being moved
+          const actionIndex = sorted.findIndex(
+            (action) => action.id === actionId
+          );
+          if (actionIndex === -1) return prev;
+
+          const draggedAction = sorted[actionIndex];
+          const oldOrder = actionIndex;
+          const finalNewOrder = Math.max(
+            0,
+            Math.min(newOrder, sorted.length - 1)
+          );
+
+          // If no change needed
+          if (oldOrder === finalNewOrder) return prev;
+
+          // Apply the same minimal reordering logic as backend
+          const updated = sorted.map((action, index) => {
+            if (action.id === actionId) {
+              // Update the dragged action's order
+              return { ...action, order: finalNewOrder };
+            }
+
+            if (oldOrder < finalNewOrder) {
+              // Moving down: shift actions between oldOrder+1 and newOrder up by 1
+              if (index > oldOrder && index <= finalNewOrder) {
+                return { ...action, order: index - 1 };
+              }
+            } else {
+              // Moving up: shift actions between newOrder and oldOrder-1 down by 1
+              if (index >= finalNewOrder && index < oldOrder) {
+                return { ...action, order: index + 1 };
+              }
+            }
+
+            // Keep original order for unaffected actions
+            return action;
+          });
+
+          return updated;
+        });
 
         return true;
       } catch (err) {
@@ -266,7 +326,7 @@ export const useJournalActions = (
         return false;
       }
     },
-    [rawActions] // Depend on rawActions
+    []
   );
 
   // Get eligible fields for actions (NUMBER, NUMBER_NAVIGATION, TIME_SELECT, or CHECK if it's the only type)

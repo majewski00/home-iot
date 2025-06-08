@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { Amplify } from "aws-amplify";
 import { Authenticator, View } from "@aws-amplify/ui-react";
 import {
@@ -32,13 +32,18 @@ Amplify.configure({
   },
 });
 
+const router = createBrowserRouter([
+  {
+    path: "*",
+    element: (
+      <Authenticator.Provider>
+        <View>
+          <AppRoutes />
+        </View>
+      </Authenticator.Provider>
+    ),
+  },
+]);
+
 const root = createRoot(document.getElementById("root")!);
-root.render(
-  <BrowserRouter>
-    <Authenticator.Provider>
-      <View>
-        <AppRoutes />
-      </View>
-    </Authenticator.Provider>
-  </BrowserRouter>
-);
+root.render(<RouterProvider router={router} />);

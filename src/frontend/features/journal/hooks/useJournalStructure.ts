@@ -49,6 +49,7 @@ export interface UseJournalStructureMethods {
   reorderGroup: (groupId: string, newOrder: number) => Promise<boolean>;
   reorderField: (fieldId: string, newOrder: number) => Promise<boolean>;
   reorderFieldType: (fieldTypeId: string, newOrder: number) => Promise<boolean>;
+  toggleGroupCollapsed: (groupId: string) => Promise<boolean>; // New method
 }
 
 export interface UseJournalStructureReturn {
@@ -1020,6 +1021,31 @@ export const useJournalStructure = (
     }
   };
 
+  const toggleGroupCollapsed = async (groupId: string): Promise<boolean> => {
+    if (!structure) {
+      setError("No journal exists");
+      return false;
+    }
+
+    try {
+      const group = structure.groups.find((g) => g.id === groupId);
+      if (!group) {
+        setError("Group not found");
+        return false;
+      }
+
+      const updates = {
+        collapsedByDefault: !group.collapsedByDefault,
+      };
+
+      return await updateGroup(groupId, updates);
+    } catch (err) {
+      setError("Failed to toggle group collapse state");
+      console.error("Error toggling group collapse state:", err);
+      return false;
+    }
+  };
+
   const methods: UseJournalStructureMethods = useMemo(
     () => ({
       addGroup,
@@ -1036,6 +1062,7 @@ export const useJournalStructure = (
       reorderGroup,
       reorderField,
       reorderFieldType,
+      toggleGroupCollapsed, // Add to methods
     }),
     [
       addGroup,
@@ -1052,6 +1079,7 @@ export const useJournalStructure = (
       reorderGroup,
       reorderField,
       reorderFieldType,
+      toggleGroupCollapsed, // Add to dependencies
     ]
   );
 

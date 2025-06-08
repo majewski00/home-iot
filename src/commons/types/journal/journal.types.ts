@@ -18,6 +18,7 @@ export interface Group {
   name: string;
   fields: Field[];
   order: number;
+  collapsedByDefault?: boolean; // New property for groups that should be collapsed by default
   createdAt: Date | string;
   updatedAt: Date | string;
 }
@@ -39,7 +40,8 @@ export type FieldTypeKind =
   | "NUMBER"
   | "TIME_SELECT"
   | "SEVERITY"
-  | "RANGE";
+  | "RANGE"
+  | "CUSTOM_SCALE";
 
 // FieldType represents the type of data for a field
 export interface FieldType {
@@ -47,7 +49,10 @@ export interface FieldType {
   fieldId: string;
   kind: FieldTypeKind | "CHECK"; // CHECK is a special case for checkbox associated with all Field
   description?: string; // e.g., "When did it occur?"
-  dataOptions?: Record<string, string | number | boolean | undefined>; // e.g., "Hours", "Minutes", "Servings", max/min range, etc. - depending on the kind
+  dataOptions?: Record<
+    string,
+    string | number | boolean | string[] | undefined
+  >; // e.g., "Hours", "Minutes", "Servings", max/min range, labels array, etc. - depending on the kind
   order: number;
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -106,4 +111,6 @@ export interface Action {
   isDailyAction?: boolean;
   lastTriggeredDate?: string;
   _validation?: ActionValidation;
+  iconName?: string | null; // Icon name from Material-UI icons
+  iconColor?: string; // Icon color (inherit, primary, secondary, etc.)
 }

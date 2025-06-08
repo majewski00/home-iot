@@ -13,6 +13,10 @@ import {
 } from "./types/TimeSelectField";
 import { SeverityFieldView, SeverityFieldEdit } from "./types/SeverityField";
 import { RangeFieldView, RangeFieldEdit } from "./types/RangeField";
+import {
+  CustomScaleFieldView,
+  CustomScaleFieldEdit,
+} from "./types/CustomScaleField";
 
 export interface FieldTypeFactoryProps {
   fieldType: FieldType;
@@ -101,6 +105,20 @@ const FieldTypeFactory: React.FC<FieldTypeFactoryProps> = ({
         />
       ) : (
         <RangeFieldEdit fieldType={fieldType} onUpdate={onFieldTypeUpdate} />
+      );
+
+    case "CUSTOM_SCALE":
+      return mode === "view" ? (
+        <CustomScaleFieldView
+          value={value}
+          onChange={onChange}
+          fieldType={fieldType}
+        />
+      ) : (
+        <CustomScaleFieldEdit
+          fieldType={fieldType}
+          onUpdate={onFieldTypeUpdate}
+        />
       );
 
     default:

@@ -71,14 +71,16 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
     <Paper
       elevation={0}
       sx={{
-        p: 2,
-        mb: 2,
-        borderRadius: 2,
+        p: 3,
+        mb: 3,
+        borderRadius: 3,
         bgcolor: "background.paper",
-        border: "1px solid",
-        borderColor: "divider",
-        boxShadow: "none", // Remove any shadow
-        borderWidth: "1px", // Thinner border
+        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.08)",
+        transition: "all 0.2s ease",
+        "&:hover": {
+          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.12)",
+          transform: "translateY(-1px)",
+        },
       }}
     >
       <Box
@@ -88,7 +90,11 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
           alignItems: "center",
         }}
       >
-        <Typography variant="subtitle1" fontWeight="medium">
+        <Typography
+          variant="h6"
+          fontWeight="500"
+          sx={{ color: "text.primary" }}
+        >
           {field.name}
         </Typography>
 
@@ -105,7 +111,15 @@ const JournalFieldInput: React.FC<JournalFieldInputProps> = ({
       {/* Only render Collapse if there are other field types to show */}
       {otherFieldTypes.length > 0 && (
         <Collapse in={expanded} timeout="auto" unmountOnExit>
-          <Box sx={{ mt: 2, pl: 1 }}>
+          <Box
+            sx={{
+              mt: 3,
+              pl: 0,
+              pt: 2,
+              borderTop: "1px solid",
+              borderColor: "divider",
+            }}
+          >
             {otherFieldTypes.map((fieldType) => {
               const fieldValue = values.find(
                 (v) => v.fieldTypeId === fieldType.id
